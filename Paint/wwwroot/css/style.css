@@ -1,3 +1,32 @@
 * {
     font-family: system-ui;
 }
+
+body {
+    margin: 0;
+}
+main {
+    margin: 8px;
+}
+
+nav {
+    top: 0;
+    position: sticky;
+    background: white;
+    padding: 15px;
+    border-bottom: 3px solid #ddd
+}
+nav ul {
+    list-style: none;
+    display: flex;
+    margin: 0;
+    padding: 0;
+    gap: 15px;
+}
+nav a {
+    color: inherit;
+    text-decoration: none;
+}
+nav a:hover {
+    color: gray;
+}

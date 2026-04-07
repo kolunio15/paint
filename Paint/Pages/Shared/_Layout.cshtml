@@ -7,6 +7,13 @@
     <title>@ViewBag.Title</title>
 </head>
 <body>
+    <nav>
+        <ul>
+            <li><a asp-page="/Index">Home</a></li>
+            <li><a asp-page="/Rooms">Rooms</a></li>
+            <li><a asp-page="/Account">Account</a></li>
+        </ul>
+    </nav>
     <div>
         @RenderBody()
     </div>
