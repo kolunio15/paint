@@ -30,3 +30,57 @@ nav a {
 nav a:hover {
     color: gray;
 }
+
+.gallery section {
+    padding-top: 10px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+
+    gap: 15px;
+}
+.gallery article {
+    box-sizing: border-box;
+    width: 100%;
+    border: 6px double #ddd;
+}
+.gallery figure {
+    margin: 0;
+}
+.gallery figure > div {
+    display: flex;
+    align-items: center;
+    gap: 1px;
+    background: #fefefe;
+    padding-left: 5px;
+    padding-right: 5px;
+    border-top: 2px solid #ddd;
+}
+.gallery img {
+    width: 100%;
+    aspect-ratio: 3/2;
+    object-fit: contain;
+    display: block;
+
+    box-sizing: border-box;
+    background-image: conic-gradient( #ddd 25%, #fff 0 50%, #ddd 0 75%, #fff 0 );
+    background-size: 50px 50px;
+}
+
+.gallery-art-title {
+    flex-grow: 1;
+    white-space: nowrap;
+    overflow: hidden;
+}
+.gallery figcaption {
+    padding: 0.8rem;
+    color: black;
+    text-align: left;
+
+    overflow: hidden; 
+    white-space: nowrap; 
+    text-overflow: ellipsis; 
+}
+.gallery a {
+    text-decoration: none;
+    display: block;
+}

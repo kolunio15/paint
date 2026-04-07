@@ -1,7 +1,30 @@
 @page
 @model IndexModel
 @{
-	ViewData["Title"] = "Welcome :)";
+    ViewData["Title"] = "Welcome :)";
 }
+<main class="gallery">
+    <section>
+        @for (int i = 0; i < 50; ++i)
+            @foreach(var art in Model.Artworks)
+            {
+                <article>
+                    <figure>
+                        <a asp-page="/Artwork" asp-route-id="@art">
+                            <img src="@art.ImageUrl" loading="lazy">
+                        </a>
 
-<h1>Paint paint paint!</h1>
+                        <div>
+                            <a asp-page="/Artwork" asp-route-id="@art" class="gallery-art-title">
+                                <figcaption>@art.Title</figcaption>
+                            </a>
+
+                            <button>+</button>
+                            <span>@art.Points</span>
+                            <button>-</button>
+                        </div>                       
+                    </figure>
+                </article>
+            }
+    </section>   
+</main>
