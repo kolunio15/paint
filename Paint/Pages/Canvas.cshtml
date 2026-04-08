@@ -1,0 +1,67 @@
+@page
+@{
+    ViewData["Title"] = "Let's Paint!";
+}
+
+<link rel="stylesheet" href="@Url.Content("~/css/canvas.css")" />
+<script src="@Url.Content("~/js/canvas.js")" defer></script>
+
+<div class="paint-app">
+    <div class="menu-bar">
+        <div class="menu-item">File</div>
+        <div class="menu-item">Edit</div>
+        <div class="menu-item">View</div>
+        <div class="menu-item">Image</div>
+        <div class="menu-item">Colors</div>
+        <div class="menu-item">Help</div>
+    </div>
+
+    <div class="main-content">
+        <div class="toolbox">
+            <div class="tool" id="pen">✏️</div>
+            <div class="tool active" id="brush">🖌️</div>
+            <div class="tool" id="eraser">🧽</div>
+            <div class="tool" id="bucket">🪣</div>
+            <div class="tool"></div>
+            <div class="tool"></div>
+            <div class="tool"></div>
+            <div class="tool"></div>
+            <div class="tool"></div>
+            <div class="tool"></div>
+            <div class="tool-options">
+                <input type="range" id="size" min="1" max="20" value="2" />
+            </div>
+        </div>
+
+        <div class="canvas-area" id="canvasContainer">
+            <canvas id="paintCanvas"></canvas>
+        </div>
+    </div>
+
+    <div class="bottom-bar">
+        <div class="active-colors" onclick="toggleMainColor()">
+            <div id="mainColorDisplay" class="color-box main-color"></div>
+            <div id="secondaryColorDisplay" class="color-box secondary-color"></div>
+        </div>
+        <div class="palette" id="palette"></div>
+    </div>
+
+    <div class="status-bar">Also try Gimp!</div>
+</div>
+
+<div class="chat-container">
+    <div class="chat-header" onclick="toggleChat()">
+        <span>Room Chat</span>
+        <span>▲</span>
+    </div>
+    <div class="chat-body" id="chatBody">
+        <div class="chat-messages" id="chatMessages">
+            <div class="message">**System**: Room pokoj1 created!</div>
+        </div>
+        <div class="chat-input-area">
+            <input type="text" id="chatInput" placeholder="Write something..." />
+            <button onclick="sendMessage()">Send</button>
+        </div>
+    </div>
+</div>
+</div>
