@@ -3,28 +3,45 @@
 @{
     ViewData["Title"] = "Welcome :)";
 }
+
 <main class="gallery">
-    <section>
-        @for (int i = 0; i < 50; ++i)
-            @foreach(var art in Model.Artworks)
-            {
-                <article>
-                    <figure>
-                        <a asp-page="/Artwork" asp-route-id="@art">
-                            <img src="@art.ImageUrl" loading="lazy">
-                        </a>
+    <div class="gallery-window">
+        <!-- Pasek tytułowy okna -->
+        <div class="gallery-titlebar">
+            <div class="titlebar-title">Exploring - Paint Gallery</div>
+            <div class="gallery-titlebar-buttons">
+                <div class="titlebar-btn">_</div>
+                <div class="titlebar-btn titlebar-btn-max"></div>
+                <div class="titlebar-btn">✕</div>
+            </div>
+        </div>
 
-                        <div>
-                            <a asp-page="/Artwork" asp-route-id="@art" class="gallery-art-title">
-                                <figcaption>@art.Title</figcaption>
-                            </a>
-
+        <!-- Siatka prac -->
+        <section>
+        @foreach (var artwork in Model.Artworks)
+        {
+            <article>
+                <figure>
+                    <a asp-page="/Artwork" asp-route-id="@artwork.Id">
+                        <img src="@artwork.ImageUrl" alt="@artwork.Title">
+                    </a>
+                    <div>
+                        <span class="gallery-art-title">@artwork.Title</span>
+                        <div class="vote-controls">
                             <button>+</button>
-                            <span>@art.Points</span>
+                            <span class="vote-points @(artwork.Points < 0 ? "points-negative" : "points-positive")">@artwork.Points</span>
                             <button>-</button>
-                        </div>                       
-                    </figure>
-                </article>
-            }
-    </section>   
+                        </div>
+                    </div>
+                </figure>
+            </article>
+        }
+        </section>
+
+        <!-- Pasek statusu -->
+        <div class="gallery-statusbar">
+            <span>@Model.Artworks.Count object(s)</span>
+            <span>Ready</span>
+        </div>
+    </div>
 </main>

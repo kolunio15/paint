@@ -1,0 +1,106 @@
+@page
+@model ArtworkModel
+@{
+    ViewData["Title"] = Model.Art.Title;
+}
+
+<main class="artwork-page">
+
+    <!-- Pasek narzędziowy -->
+    <div class="explorer-toolbar">
+        <a asp-page="/Index" class="toolbar-btn">
+            <div class="back-arrow"></div>
+            Back
+        </a>
+        <div class="toolbar-separator"></div>
+        <span class="toolbar-address">
+            <img src="~/icons/directory_open.ico" width="16" height="16" alt="" style="image-rendering:pixelated;object-fit:contain">
+            Gallery / @Model.Art.Title
+        </span>
+    </div>
+
+    <!-- Okno z obrazkiem -->
+    <div class="win-window">
+        <div class="gallery-titlebar">
+            <div class="titlebar-title" style="--titlebar-icon: url('/icons/paint_file.ico')">
+                @Model.Art.Title
+            </div>
+            <div class="gallery-titlebar-buttons">
+                <div class="titlebar-btn">_</div>
+                <div class="titlebar-btn titlebar-btn-max"></div>
+                <div class="titlebar-btn">✕</div>
+            </div>
+        </div>
+        <div class="artwork-body">
+            <img src="@Model.Art.ImageUrl" alt="@Model.Art.Title" class="artwork-img">
+            <div class="artwork-info">
+                <div class="artwork-info-row">
+                    <span class="artwork-label">Title:</span>
+                    <span>@Model.Art.Title</span>
+                </div>
+                <div class="artwork-info-row">
+                    <span class="artwork-label">Points:</span>
+                    <span class="artwork-points">@Model.Art.Points</span>
+                </div>
+                <div class="artwork-info-row">
+                    <span class="artwork-label">Comments:</span>
+                    <span>@Model.Art.CommentCount</span>
+                </div>
+                <div class="artwork-vote">
+                    <button>+ Vote Up</button>
+                    <button>- Vote Down</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Okno z komentarzami -->
+    <div class="win-window">
+        <div class="gallery-titlebar">
+            <div class="titlebar-title" style="--titlebar-icon: url('/icons/accessibility.ico')">
+                Comments (@Model.Art.CommentCount)
+            </div>
+            <div class="gallery-titlebar-buttons">
+                <div class="titlebar-btn">_</div>
+                <div class="titlebar-btn titlebar-btn-max"></div>
+                <div class="titlebar-btn">✕</div>
+            </div>
+        </div>
+        <div class="comments-body">
+
+            <!-- Lista komentarzy (mock) -->
+            <div class="comment">
+                <div class="comment-header">
+                    <img src="~/icons/address_book_user.ico" width="16" height="16" alt="" style="image-rendering:pixelated;object-fit:contain">
+                    <strong>user123</strong>
+                    <span class="comment-date">09/04/1999 21:37</span>
+                </div>
+                <div class="comment-text">Bardzo fajny rysunek!</div>
+            </div>
+            <div class="comment">
+                <div class="comment-header">
+                    <img src="~/icons/address_book_user.ico" width="16" height="16" alt="" style="image-rendering:pixelated;object-fit:contain">
+                    <strong>painter99</strong>
+                    <span class="comment-date">09/04/1999 21:45</span>
+                </div>
+                <div class="comment-text">Super robota :)</div>
+            </div>
+
+            <!-- Formularz nowego komentarza -->
+            <div class="comment-form">
+                <div class="win-window-inset">
+                    <label for="comment-input">Add comment:</label>
+                    <textarea id="comment-input" rows="3" placeholder="Write your comment here..."></textarea>
+                </div>
+                <button class="comment-submit">Post Comment</button>
+            </div>
+        </div>
+
+        <!-- Pasek statusu -->
+        <div class="gallery-statusbar">
+            <span>@Model.Art.CommentCount comment(s)</span>
+            <span>Ready</span>
+        </div>
+    </div>
+
+</main>

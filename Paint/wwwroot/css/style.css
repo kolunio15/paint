@@ -1,86 +1,563 @@
+/* ===== Windows 98 Theme ===== */
+
+html {
+    font-size: 120%;
+    zoom: 1.2;
+}
+
 * {
-    font-family: system-ui;
+    font-family: 'MS Sans Serif', 'Arial', Tahoma, sans-serif;
+    font-size: 13px;
+    box-sizing: border-box;
 }
 
 body {
     margin: 0;
-}
-main {
-    margin: 8px;
+    background-color: #008080; /* Klasyczny kolorek Win98*/
+    min-height: 100vh;
 }
 
+/* Pasek nawigacji */
 nav {
     top: 0;
     position: sticky;
-    background: white;
-    padding: 15px;
-    border-bottom: 3px solid #ddd
+    z-index: 100;
+    background: #c0c0c0;
+    padding: 2px 4px;
+    border-bottom: 2px solid #808080;
+    border-top: 2px solid #ffffff;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    box-shadow: inset 0 1px 0 #ffffff;
 }
+
 nav ul {
     list-style: none;
     display: flex;
     margin: 0;
     padding: 0;
-    gap: 15px;
+    gap: 2px;
 }
+
 nav a {
-    color: inherit;
+    color: #000000;
     text-decoration: none;
+    display: inline-block;
+    padding: 4px 10px;
+    border-top: 1px solid #ffffff;
+    border-left: 1px solid #ffffff;
+    border-bottom: 1px solid #404040;
+    border-right: 1px solid #404040;
+    background: #c0c0c0;
 }
+
 nav a:hover {
-    color: gray;
+    background: #000080;
+    color: #ffffff;
 }
 
+nav a:active {
+    border-top: 1px solid #404040;
+    border-left: 1px solid #404040;
+    border-bottom: 1px solid #ffffff;
+    border-right: 1px solid #ffffff;
+}
+
+/* Główna zawartość */
+main {
+    margin: 10px;
+    padding: 0;
+}
+
+/* Okno galerii */
+.gallery-window {
+    background: #c0c0c0;
+    border-top: 2px solid #ffffff;
+    border-left: 2px solid #ffffff;
+    border-bottom: 2px solid #404040;
+    border-right: 2px solid #404040;
+    box-shadow: 1px 1px 0 #000000;
+}
+
+.gallery-titlebar {
+    background: linear-gradient(to right, #000080 60%, #1166a8 100%);
+    color: #ffffff;
+    font-weight: bold;
+    padding: 3px 6px;   
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+    user-select: none;
+}
+
+.gallery-titlebar-buttons {
+    display: flex;
+    gap: 2px;
+}
+
+.titlebar-btn {
+    width: 19px;
+    height: 17px;
+    background: #c0c0c0;
+    border-top: 1px solid #ffffff;
+    border-left: 1px solid #ffffff;
+    border-bottom: 1px solid #404040;
+    border-right: 1px solid #404040;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #000000;
+    cursor: default;
+    font-size: 10px;
+    font-weight: bold;
+    line-height: 1;
+    font-family: 'Arial', sans-serif;
+    padding-bottom: 2px;
+}
+
+.titlebar-btn-max {
+    position: relative;
+    padding: 0;
+}
+
+.titlebar-btn-max::before {
+    content: '';
+    display: block;
+    width: 10px;
+    height: 9px;
+    border: 1px solid #000000;
+    border-top: 2px solid #000000;
+}
+
+.titlebar-btn:active {
+    border-top: 1px solid #404040;
+    border-left: 1px solid #404040;
+    border-bottom: 1px solid #ffffff;
+    border-right: 1px solid #ffffff;
+}
+
+.titlebar-title {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    line-height: 16px;
+    color: #ffffff;        
+    font-size: 11px;
+    font-weight: bold;
+    font-family: 'MS Sans Serif', Arial, sans-serif;
+}
+
+.titlebar-title::before {
+    content: '';
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    background-image: var(--titlebar-icon, url('/icons/directory_open.ico'));
+    background-size: 16px 16px;
+    background-repeat: no-repeat;
+    background-position: center;
+    flex-shrink: 0;
+}
+
+/* Siatka galerii */
 .gallery section {
-    padding-top: 10px;
+    padding: 6px;
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 6px;
+    background: #c0c0c0;
+}
 
-    gap: 15px;
-}
 .gallery article {
-    box-sizing: border-box;
-    width: 100%;
-    border: 6px double #ddd;
+    background: #c0c0c0;
+    border-top: 1px solid #ffffff;
+    border-left: 1px solid #ffffff;
+    border-bottom: 1px solid #404040;
+    border-right: 1px solid #404040;
+    box-shadow: inset 1px 1px 0 #dfdfdf;
 }
+
 .gallery figure {
     margin: 0;
 }
+
 .gallery figure > div {
     display: flex;
     align-items: center;
-    gap: 1px;
-    background: #fefefe;
-    padding-left: 5px;
-    padding-right: 5px;
-    border-top: 2px solid #ddd;
+    gap: 2px;
+    background: #c0c0c0;
+    padding: 2px 4px;
+    border-top: 1px solid #808080;
 }
+
+/* Obrazek */
 .gallery img {
     width: 100%;
-    aspect-ratio: 3/2;
+    aspect-ratio: 4/3;
     object-fit: contain;
     display: block;
-
-    box-sizing: border-box;
-    background-image: conic-gradient( #ddd 25%, #fff 0 50%, #ddd 0 75%, #fff 0 );
-    background-size: 50px 50px;
+    background-color: #ffffff;
+    background-image: conic-gradient(#dfdfdf 25%, #ffffff 0 50%, #dfdfdf 0 75%, #ffffff 0);
+    background-size: 20px 20px;
+    border-top: 2px solid #808080;
+    border-left: 2px solid #808080;
+    border-bottom: 2px solid #ffffff;
+    border-right: 2px solid #ffffff;
 }
 
+/* Tytuł pracy */
 .gallery-art-title {
     flex-grow: 1;
     white-space: nowrap;
     overflow: hidden;
+    min-width: 0;
 }
-.gallery figcaption {
-    padding: 0.8rem;
-    color: black;
-    text-align: left;
 
-    overflow: hidden; 
-    white-space: nowrap; 
-    text-overflow: ellipsis; 
+.gallery figcaption {
+    padding: 2px 4px;
+    color: #000000;
+    text-align: left;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: 11px;
 }
+
 .gallery a {
     text-decoration: none;
     display: block;
+    color: inherit;
+}
+
+.gallery button:active {
+    border-top: 1px solid #404040;
+    border-left: 1px solid #404040;
+    border-bottom: 1px solid #ffffff;
+    border-right: 1px solid #ffffff;
+}
+
+.gallery button:hover {
+    background: #d4d4d4;
+}
+
+/* Pasek statusu  */
+.gallery-statusbar {
+    background: #c0c0c0;
+    border-top: 1px solid #808080;
+    padding: 2px 6px;
+    font-size: 13px;
+    color: #000000;
+    display: flex;
+    gap: 8px;
+}
+
+.gallery-statusbar span {
+    border-top: 1px solid #808080;
+    border-left: 1px solid #808080;
+    border-bottom: 1px solid #ffffff;
+    border-right: 1px solid #ffffff;
+    padding: 1px 6px;
+    min-width: 80px;
+    color: #000000;
+    font-weight: normal;
+}
+
+/* ===== Strona pojedynczego obrazka ===== */
+.artwork-page {
+    margin: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.win-window {
+    background: #c0c0c0;
+    border-top: 2px solid #ffffff;
+    border-left: 2px solid #ffffff;
+    border-bottom: 2px solid #404040;
+    border-right: 2px solid #404040;
+    box-shadow: 1px 1px 0 #000000;
+}
+
+.artwork-body {
+    display: flex;
+    gap: 10px;
+    padding: 8px;
+}
+
+.artwork-img {
+    width: 400px;
+    height: 300px;
+    object-fit: contain;
+    background-color: #ffffff;
+    background-image: conic-gradient(#dfdfdf 25%, #ffffff 0 50%, #dfdfdf 0 75%, #ffffff 0);
+    background-size: 20px 20px;
+    border-top: 2px solid #808080;
+    border-left: 2px solid #808080;
+    border-bottom: 2px solid #ffffff;
+    border-right: 2px solid #ffffff;
+    flex-shrink: 0;
+}
+
+.artwork-info {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 4px;
+}
+
+.artwork-info-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.artwork-label {
+    color: #000000;
+    font-weight: bold;
+    min-width: 70px;
+}
+
+.artwork-points {
+    color: #000080;
+    font-weight: bold;
+}
+
+.artwork-vote {
+    display: flex;
+    gap: 4px;
+    margin-top: 8px;
+}
+
+.points-positive {
+    color: #000080;
+}
+
+.points-negative {
+    color: #800000;
+}
+
+.artwork-vote button {
+    background: #c0c0c0;
+    border-top: 1px solid #ffffff;
+    border-left: 1px solid #ffffff;
+    border-bottom: 1px solid #404040;
+    border-right: 1px solid #404040;
+    padding: 3px 10px;
+    cursor: pointer;
+}
+
+.artwork-vote button:active {
+    border-top: 1px solid #404040;
+    border-left: 1px solid #404040;
+    border-bottom: 1px solid #ffffff;
+    border-right: 1px solid #ffffff;
+}
+
+/* ===== Komentarze ===== */
+.comments-body {
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.comment {
+    background: #ffffff;
+    border-top: 1px solid #808080;
+    border-left: 1px solid #808080;
+    border-bottom: 1px solid #ffffff;
+    border-right: 1px solid #ffffff;
+    padding: 4px 6px;
+}
+
+.comment-header {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 2px;
+}
+
+.comment-date {
+    color: #808080;
+    margin-left: auto;
+}
+
+.comment-text {
+    padding-left: 20px;
+}
+
+.comment-form {
+    margin-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.win-window-inset {
+    border-top: 1px solid #808080;
+    border-left: 1px solid #808080;
+    border-bottom: 1px solid #ffffff;
+    border-right: 1px solid #ffffff;
+    padding: 6px;
+    background: #ffffff;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.win-window-inset textarea {
+    width: 100%;
+    resize: vertical;
+    border-top: 1px solid #808080;
+    border-left: 1px solid #808080;
+    border-bottom: 1px solid #ffffff;
+    border-right: 1px solid #ffffff;
+    padding: 2px 4px;
+    font-family: 'MS Sans Serif', Arial, sans-serif;
+    font-size: 13px;
+}
+
+.comment-submit {
+    align-self: flex-start;
+    background: #c0c0c0;
+    border-top: 1px solid #ffffff;
+    border-left: 1px solid #ffffff;
+    border-bottom: 1px solid #404040;
+    border-right: 1px solid #404040;
+    padding: 3px 16px;
+    cursor: pointer;
+    font-size: 13px;
+}
+
+.comment-submit:active {
+    border-top: 1px solid #404040;
+    border-left: 1px solid #404040;
+    border-bottom: 1px solid #ffffff;
+    border-right: 1px solid #ffffff;
+}
+
+.explorer-toolbar {
+    background: #c0c0c0;
+    border-bottom: 1px solid #808080;
+    padding: 3px 6px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+
+.toolbar-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: #c0c0c0;
+    border-top: 1px solid #ffffff;
+    border-left: 1px solid #ffffff;
+    border-bottom: 1px solid #404040;
+    border-right: 1px solid #404040;
+    padding: 2px 8px;
+    text-decoration: none;
+    color: #000000;
+    font-size: 13px;
+    image-rendering: pixelated;
+}
+
+.toolbar-btn:active {
+    border-top: 1px solid #404040;
+    border-left: 1px solid #404040;
+    border-bottom: 1px solid #ffffff;
+    border-right: 1px solid #ffffff;
+}
+
+.toolbar-separator {
+    width: 1px;
+    height: 20px;
+    background: #808080;
+    margin: 0 2px;
+}
+
+.toolbar-address {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: #000000;
+}
+
+/* Przyciski głosowania */
+.vote-controls {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.vote-controls button {
+    width: 18px;
+    height: 18px;
+    background: #c0c0c0;
+    border-top: 1px solid #ffffff;
+    border-left: 1px solid #ffffff;
+    border-bottom: 1px solid #404040;
+    border-right: 1px solid #404040;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: bold;
+    line-height: 1;
+    padding: 0;
+    flex-shrink: 0;
+}
+
+.vote-controls button:active {
+    border-top: 1px solid #404040;
+    border-left: 1px solid #404040;
+    border-bottom: 1px solid #ffffff;
+    border-right: 1px solid #ffffff;
+}
+
+.vote-controls button:hover {
+    background: #d4d4d4;
+}
+
+/* Liczba punktów */
+.vote-points {
+    min-width: 24px;
+    text-align: center;
+    font-size: 13px;
+    font-weight: bold;
+}
+
+/* Strzałeczki */
+.back-arrow {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    position: relative;
+    flex-shrink: 0;
+}
+
+.back-arrow::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 2px;
+    transform: translateY(-50%);
+    border-top: 5px solid transparent;
+    border-bottom: 5px solid transparent;
+    border-right: 8px solid #000000;
+}
+
+.back-arrow::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 8px;
+    transform: translateY(-50%);
+    width: 7px;
+    height: 2px;
+    background: #000000;
 }
