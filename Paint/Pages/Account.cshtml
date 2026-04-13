@@ -1,0 +1,159 @@
+@page
+@model AccountModel
+@{
+    ViewData["Title"] = "My Account";
+}
+
+<main class="rooms-page">
+    <div class="win-window" style="max-width: 700px; margin: 0 auto;">
+
+        <!-- Title Bar -->
+        <div class="gallery-titlebar">
+            <div class="titlebar-title" style="--titlebar-icon: url('/icons/address_book.ico')">
+                User Account Properties
+            </div>
+            <div class="gallery-titlebar-buttons">
+                <div class="titlebar-btn">_</div>
+                <div class="titlebar-btn titlebar-btn-max"></div>
+                <div class="titlebar-btn">✕</div>
+            </div>
+        </div>
+
+        <!-- Body -->
+        <div style="padding: 16px; background: #ece9d8;">
+
+            <!-- Avatar + Info row -->
+            <div style="display: flex; gap: 16px; align-items: flex-start; margin-bottom: 14px;">
+                <div style="width: 64px; height: 64px; border: 2px inset #808080; background: #ffffff; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                    <img src="~/icons/address_book_user.ico" width="32" height="32" alt="Avatar" style="image-rendering: pixelated;" onerror="this.style.display='none'">
+                </div>
+                <div style="flex: 1;">
+                    <div style="font-weight: bold; font-size: 14px; margin-bottom: 2px;">@Model.Username</div>
+                    <div style="color: #444; font-size: 11px; margin-bottom: 2px;">ID: <code>@Model.UserId</code></div>
+                    <div style="font-size: 11px; color: #666;">Member since: @Model.MemberSince.ToString("MMMM d, yyyy")</div>
+                </div>
+            </div>
+
+            <!-- Divider -->
+            <div style="border-top: 1px solid #808080; border-bottom: 1px solid #ffffff; margin-bottom: 14px;"></div>
+
+            <!-- Stats group box -->
+            <fieldset style="border: 1px solid #808080; padding: 8px 12px; margin-bottom: 14px; background: #ece9d8;">
+                <legend style="padding: 0 6px; font-size: 11px;">Account Statistics</legend>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px 20px;">
+                    <div style="display: flex; align-items: center; gap: 6px; font-size: 12px;">
+                        <img src="~/icons/paint_file.ico" width="16" height="16" alt="" style="image-rendering:pixelated;" onerror="this.style.display='none'">
+                        <span>Artworks uploaded:</span>
+                        <strong>@Model.ArtworkCount</strong>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 6px; font-size: 12px;">
+                        <img src="~/icons/bar_graph.ico" width="16" height="16" alt="" style="image-rendering:pixelated;" onerror="this.style.display='none'">
+                        <span>Total likes:</span>
+                        <strong>@Model.TotalLikes</strong>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 6px; font-size: 12px;">
+                        <img src="~/icons/address_book_users.ico" width="16" height="16" alt="" style="image-rendering:pixelated;" onerror="this.style.display='none'">
+                        <span>Rooms joined:</span>
+                        <strong>@Model.RoomsJoined</strong>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 6px; font-size: 12px;">
+                        <img src="~/icons/calendar.ico" width="16" height="16" alt="" style="image-rendering:pixelated;" onerror="this.style.display='none'">
+                        <span>Last active:</span>
+                        <strong>@Model.LastActive.ToString("yyyy-MM-dd")</strong>
+                    </div>
+                </div>
+            </fieldset>
+
+            <!-- Edit profile group box -->
+            <fieldset style="border: 1px solid #808080; padding: 8px 12px; margin-bottom: 14px; background: #ece9d8;">
+                <legend style="padding: 0 6px; font-size: 11px;">Edit Profile</legend>
+                <form method="post">
+                    <div style="display: grid; grid-template-columns: 120px 1fr; gap: 8px; align-items: center; font-size: 12px;">
+                        <label for="displayName">Display Name:</label>
+                        <input id="displayName" name="DisplayName" type="text" value="@Model.Username"
+                               class="win-window-inset"
+                               style="padding: 2px 4px; font-size: 12px; width: 100%; font-family: inherit;">
+
+                        <label for="bioInput">Bio:</label>
+                        <textarea id="bioInput" name="Bio" rows="3"
+                                  class="win-window-inset"
+                                  style="padding: 2px 4px; font-size: 12px; width: 100%; font-family: inherit; resize: vertical;">@Model.Bio</textarea>
+                    </div>
+                    <div style="display: flex; justify-content: flex-end; gap: 6px; margin-top: 10px;">
+                        <button type="submit" class="comment-submit">Apply</button>
+                        <button type="reset" class="toolbar-btn" style="justify-content: center; min-width: 64px;">Cancel</button>
+                    </div>
+                </form>
+            </fieldset>
+
+            <!-- Danger Zone -->
+            <fieldset style="border: 1px solid #808080; padding: 8px 12px; background: #ece9d8;">
+                <legend style="padding: 0 6px; font-size: 11px; display: flex; align-items: center; gap: 4px;">
+                    <img src="~/icons/msg_warning.ico" width="14" height="14" alt="" style="image-rendering:pixelated;" onerror="this.style.display='none'">
+                    Danger Zone
+                </legend>
+                <div style="display: flex; align-items: center; justify-content: space-between; font-size: 12px;">
+                    <div>
+                        <div style="font-weight: bold; margin-bottom: 2px;">Sign Out</div>
+                        <div style="color: #666; font-size: 11px;">You will be logged out and redirected to the home page.</div>
+                    </div>
+                    <button type="button" onclick="showLogoutDialog()"
+                            class="toolbar-btn"
+                            style="justify-content: center; min-width: 110px; color: #8b0000; border-color: #8b0000; white-space: nowrap; flex-shrink: 0; margin-left: 16px;">
+                        Sign Out
+                    </button>
+                </div>
+            </fieldset>
+        </div>
+
+        <!-- Status bar -->
+        <div class="gallery-statusbar">
+            <span>@Model.Username</span>
+            <span>Ready</span>
+        </div>
+    </div>
+</main>
+
+<!-- Win98 confirmation dialog -->
+<div id="logoutOverlay" style="display:none; position:fixed; inset:0; background: rgba(0,0,0,0.25); z-index:1000; align-items:center; justify-content:center;">
+    <div class="win-window" style="width: 360px; box-shadow: 4px 4px 0 #000;">
+
+        <div class="gallery-titlebar" style="background: #000080;">
+            <div class="titlebar-title" style="--titlebar-icon: url('/icons/msg_warning.ico')">
+                Sign Out
+            </div>
+            <div class="gallery-titlebar-buttons">
+                <div class="titlebar-btn" onclick="hideLogoutDialog()">✕</div>
+            </div>
+        </div>
+
+        <div style="padding: 16px; background: #ece9d8; display: flex; gap: 12px; align-items: flex-start;">
+            <img src="~/icons/msg_warning.ico" width="32" height="32" alt="" style="image-rendering:pixelated; flex-shrink:0;" onerror="this.style.display='none'">
+            <div style="font-size: 12px;">
+                <p style="margin: 0 0 8px 0; font-weight: bold;">Are you sure you want to sign out?</p>
+                <p style="margin: 0; color: #444;">Your current session will be ended and you will be redirected to the home page.</p>
+            </div>
+        </div>
+
+        <div style="padding: 8px 16px 12px; background: #ece9d8; display: flex; justify-content: flex-end; gap: 6px; border-top: 1px solid #808080;">
+            <form method="post" asp-page-handler="SignOut" style="display:inline;">
+                <button type="submit" class="comment-submit">Yes, sign out</button>
+            </form>
+            <button type="button" onclick="hideLogoutDialog()" class="toolbar-btn" style="justify-content: center; min-width: 64px;">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    function showLogoutDialog() {
+        const el = document.getElementById('logoutOverlay');
+        el.style.display = 'flex';
+    }
+    function hideLogoutDialog() {
+        const el = document.getElementById('logoutOverlay');
+        el.style.display = 'none';
+    }
+    document.getElementById('logoutOverlay').addEventListener('click', function(e) {
+        if (e.target === this) hideLogoutDialog();
+    });
+</script>
