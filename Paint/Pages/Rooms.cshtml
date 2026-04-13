@@ -1,0 +1,80 @@
+@page
+@model RoomsModel
+@{
+    ViewData["Title"] = "Active Rooms";
+}
+
+<main class="rooms-page">
+    <div class="win-window" style="max-width: 800px; margin: 0 auto;">
+        
+        <div class="gallery-titlebar">
+            <div class="titlebar-title" style="--titlebar-icon: url('/icons/directory_open.ico')">
+                Exploring - Paint Rooms
+            </div>
+            <div class="gallery-titlebar-buttons">
+                <div class="titlebar-btn">_</div>
+                <div class="titlebar-btn titlebar-btn-max"></div>
+                <div class="titlebar-btn">✕</div>
+            </div>
+        </div>
+
+        <div class="rooms-body" style="padding: 10px;">
+            <p style="margin-top: 0; margin-bottom: 10px;">Select a room to join and start painting with others:</p>
+
+            <div class="win-window-inset" style="height: 300px; overflow-y: auto; padding: 0;">
+                <table style="width: 100%; border-collapse: collapse;">
+                    <thead style="background: #c0c0c0; border-bottom: 1px solid #808080;">
+                        <tr>
+                            <th style="text-align: left; padding: 4px; border-right: 1px solid #808080; font-weight: normal;">Room Name</th>
+                            <th style="text-align: right; padding: 4px; border-right: 1px solid #808080; font-weight: normal; width: 80px;">Users</th>
+                            <th style="text-align: center; padding: 4px; border-right: 1px solid #808080; font-weight: normal; width: 80px;">Status</th>
+                            <th style="text-align: center; padding: 4px; font-weight: normal; width: 80px;">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var room in Model.ActiveRooms)
+                        {
+                            <tr style="border-bottom: 1px solid #dfdfdf;">
+                                <td style="padding: 4px; display: flex; align-items: center; gap: 5px;">
+                                    <img src="~/icons/paint_file.ico" width="16" height="16" alt="" style="image-rendering:pixelated;" onerror="this.style.display='none'">
+                                    @room.Name
+                                </td>
+                                <td style="text-align: right; padding: 4px;">@room.UserCount / @room.MaxUsers</td>
+								<td style="text-align: center; padding: 4px;">
+                                   @if (room.IsProtected)
+									{
+										<img src="~/icons/msagent.ico" width="16" height="16" alt="Private" title="Private Room" style="image-rendering: pixelated; vertical-align: middle;">
+									}
+									else
+									{
+										<span style="vertical-align: middle;">Public</span>
+									}
+                                </td>
+                                <td style="text-align: center; padding: 2px;">
+                                    <a asp-page="/Canvas" asp-route-roomId="@room.Id" class="toolbar-btn" style="justify-content: center;">
+                                        Join
+                                    </a>
+                                </td>
+                            </tr>
+                        }
+                        @if(!Model.ActiveRooms.Any())
+                        {
+                            <tr>
+                                <td colspan="4" style="text-align: center; padding: 20px; color: #808080;">No active rooms found.</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            
+            <div style="margin-top: 10px; display: flex; justify-content: flex-end;">
+                <button class="comment-submit">Create New Room</button>
+            </div>
+        </div>
+
+        <div class="gallery-statusbar">
+            <span>@Model.ActiveRooms.Count object(s)</span>
+            <span>Ready</span>
+        </div>
+    </div>
+</main>
