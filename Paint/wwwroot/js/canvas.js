@@ -116,8 +116,8 @@ function toggleMainColor() {
 function draw(e) {
     if (!painting) return;
     const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const x = e.offsetX * canvas.width  / rect.width;
+    const y = e.offsetY * canvas.height / rect.height;
 
     ctx.lineWidth = sizeInput.value;
     ctx.strokeStyle = currentMainColor;
