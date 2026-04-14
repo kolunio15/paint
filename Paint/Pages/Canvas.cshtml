@@ -3,7 +3,9 @@
     ViewData["Title"] = "Let's Paint!";
 }
 
-<link rel="stylesheet" href="@Url.Content("~/css/canvas.css")" />
+@section Style {
+    <link rel="stylesheet" href="@Url.Content("~/css/canvas.css")" />
+}
 <script src="@Url.Content("~/js/canvas.js")" defer></script>
 
 <div class="paint-app">
