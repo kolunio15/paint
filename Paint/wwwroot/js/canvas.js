@@ -18,11 +18,34 @@ let painting = false;
 let currentMainColor = "#000";
 let currentSecondaryColor = "#fff";
 
+function initWebSocket() {
+    const roomId = new URLSearchParams(window.location.search).get('roomId');
+
+    var url = new URL('/room_ws', window.location.href);
+    url.protocol = url.protocol.replace('http', 'ws');
+    url.searchParams.set('roomId', roomId);
+    const ws = new WebSocket(url.href);
+    ws.onopen = (e) => {
+        console.info('WebSocket connected');
+        ws.send("hello from client");
+    }
+    ws.onerror = (e) => {
+        console.error("WebSocket disconnected, error:", e);
+    }
+    ws.onmessage = (e) => {
+        console.log("WebSocket recieved:", e.data);
+    }
+    ws.onclose = (e) => {
+        console.info("WebSocket disconnected");
+    }
+}
+
 function initApp() {
     initTools();
     initCanvas();
     initPallette();
     initChat();
+    initWebSocket();
 }
 
 function initTools() {
