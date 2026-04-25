@@ -18,26 +18,48 @@ let painting = false;
 let currentMainColor = "#000";
 let currentSecondaryColor = "#fff";
 
-function initWebSocket() {
-    const roomId = new URLSearchParams(window.location.search).get('roomId');
 
-    var url = new URL('/room_ws', window.location.href);
-    url.protocol = url.protocol.replace('http', 'ws');
-    url.searchParams.set('roomId', roomId);
-    const ws = new WebSocket(url.href);
-    ws.onopen = (e) => {
-        console.info('WebSocket connected');
-        ws.send("hello from client");
-    }
-    ws.onerror = (e) => {
-        console.error("WebSocket disconnected, error:", e);
-    }
-    ws.onmessage = (e) => {
-        console.log("WebSocket recieved:", e.data);
-    }
-    ws.onclose = (e) => {
-        console.info("WebSocket disconnected");
-    }
+const connection = {
+    ws: null,
+    connected: false,
+
+    connect() {
+        const roomId = new URLSearchParams(window.location.search).get('roomId');
+
+        var url = new URL('/room_ws', window.location.href);
+        url.protocol = url.protocol.replace('http', 'ws');
+        url.searchParams.set('roomId', roomId);
+        this.ws = new WebSocket(url.href);
+        this.ws.onopen = (e) => {
+            console.info('WebSocket opened');
+            showNewMessage("**System**: connected");
+            this.connected = true;
+        }
+        this.ws.onerror = (e) => {
+            console.error("WebSocket error:", e);
+       
+        }
+        this.ws.onmessage = (e) => {
+            console.log("WebSocket recieved:", e.data);
+
+            if (e.data.startsWith("msg ")) {
+                showNewMessage(e.data.substring("msg ".length));
+            }
+        },
+        this.ws.onclose = (e) => {
+            console.info("WebSocket closed");
+            if (this.connected) showNewMessage("**System**: disconnected");
+            connected = false;
+            setTimeout(() => { this.connect() }, 5_000); // TODO: Increase delay on with each failed attempt
+        }
+    },
+    sendChatMessage(message) {
+        try {
+            this.ws.send("msg " + message);
+        } catch (e) {
+            console.error("error sending chat message: ", e);
+        }
+    },
 }
 
 function initApp() {
@@ -45,7 +67,7 @@ function initApp() {
     initCanvas();
     initPallette();
     initChat();
-    initWebSocket();
+    connection.connect();
 }
 
 function initTools() {
@@ -159,14 +181,17 @@ function toggleChat() {
     body.classList.toggle("open");
 }
 
-// dummy chat
+function showNewMessage(text) {
+    const msg = document.createElement("div");
+    msg.classList.add("message");
+    msg.textContent = text;
+    chatMessages.appendChild(msg);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
 function sendMessage() {
     if (chatInput.value.trim() !== "") {
-        const msg = document.createElement("div");
-        msg.classList.add("message");
-        msg.textContent = "You: " + chatInput.value;
-        chatMessages.appendChild(msg);
-        chatMessages.scrollTop = chatMessages.scrollHeight;
+        connection.sendChatMessage(chatInput.value);
         chatInput.value = "";
     }
 }

@@ -13,6 +13,7 @@ class RoomConnections(ILogger<RoomConnections> logger)
         public record Message;
         public record Connected(WebSocket Socket)    : Message;
         public record Disconnected(WebSocket Socket) : Message;
+        public record ChatMessage(string UserName, string Text) : Message;
 
         RoomConnections _roomConnections;
         string _roomId;
@@ -67,14 +68,24 @@ class RoomConnections(ILogger<RoomConnections> logger)
                         }
                         break;
                     }
-                    default: throw new NotImplementedException($"Unimplemented message type {m.GetType().Name}");
+                    case ChatMessage(string userName, string text):
+                    {
+                        var data = Encoding.UTF8.GetBytes($"msg {userName}: {text}");
+
+                        var sendTasks = connectedSockets.Keys.Select(socket =>
+                            socket.SendAsync(data, WebSocketMessageType.Text, true, CancellationToken.None));
+
+                        await Task.WhenAll(sendTasks);
+                        break;
+                    }
+                    default: throw new NotImplementedException($"Not implemented message type {m.GetType().Name}");
                 }     
             }
         }
     }
 
     Dictionary<string, ActiveRoom> _activeRooms = [];
-    public async Task HandleConnection(string roomId, WebSocket socket)
+    public async Task HandleConnection(string roomId, WebSocket socket, string userName)
     {
         ActiveRoom? room;
         lock (_activeRooms)
@@ -95,8 +106,19 @@ class RoomConnections(ILogger<RoomConnections> logger)
             {
                 var result = await socket.ReceiveAsync(buffer, CancellationToken.None);
                 var message = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                _logger.LogInformation("recieved message: '{0}'", message);
+                if (message.StartsWith("msg "))
+                {
+                    string text = message["msg ".Length..];
 
-                _logger.LogInformation("Recieved message: '{0}'", message);
+                    if (!result.EndOfMessage) {
+                        _logger.LogInformation("Recieved too long chat message message, aborting connection.");
+                        await socket.CloseAsync(WebSocketCloseStatus.MessageTooBig, "Chat message is too long", CancellationToken.None); 
+                        return;
+                    }
+
+                    await room.Post(new ActiveRoom.ChatMessage(userName, text));
+                }
             }
         } 
         finally

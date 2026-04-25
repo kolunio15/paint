@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Paint;
+using System.Security.Claims;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRazorPages();
@@ -33,7 +34,8 @@ app.Map("/room_ws", async (HttpContext context, [FromQuery] string roomId, [From
         return;
     }
     using var socket = await context.WebSockets.AcceptWebSocketAsync();
-    await connections.HandleConnection(roomId, socket);
+    string userName = context.User.FindFirstValue(ClaimTypes.Name) ?? "guest"; // TODO: make sure this works with authentication
+    await connections.HandleConnection(roomId, socket, userName);
 });
 
 app.Run();
