@@ -17,7 +17,8 @@ const sizeInput = document.getElementById("size");
 let painting = false;
 let currentMainColor = "#000";
 let currentSecondaryColor = "#fff";
-
+let strokePoints = []
+let canvasBitmapBeforeStroke = null;
 
 const connection = {
     ws: null,
@@ -79,17 +80,29 @@ function initCanvas() {
     canvas.height = container.clientHeight - 40;
     ctx.fillStyle = "white";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.lineCap = "square";
 
-    canvas.addEventListener("mousedown", (e) => {
+    canvas.addEventListener("mousedown", async (e) => {
+        ctx.lineWidth = Math.ceil(sizeInput.value);
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        ctx.strokeStyle = currentMainColor;
+        canvasBitmapBeforeStroke = await createImageBitmap(canvas);
+
         painting = true;
+        strokePoints = []; 
         draw(e);
     });
     window.addEventListener("mouseup", () => {
         painting = false;
+        ctx.drawImage(canvasBitmapBeforeStroke, 0, 0);
         ctx.beginPath();
+        ctx.moveTo(strokePoints[0].x + 0.5, strokePoints[0].y + 0.5);
+        for (const { x, y } of strokePoints) {
+            ctx.lineTo(x + 0.5, y + 0.5);
+        }
+        ctx.stroke();
     });
-    canvas.addEventListener("mousemove", draw);
+    window.addEventListener("mousemove", draw);
 }
 
 function initPallette() {
@@ -161,19 +174,55 @@ function toggleMainColor() {
 function draw(e) {
     if (!painting) return;
     const rect = canvas.getBoundingClientRect();
-    const x = e.offsetX * canvas.width  / rect.width;
-    const y = e.offsetY * canvas.height / rect.height;
 
-    ctx.lineWidth = sizeInput.value;
-    ctx.strokeStyle = currentMainColor;
-    ctx.lineTo(x, y);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(x, y);
+    const x = Math.floor((e.clientX - rect.left) * canvas.width / rect.width);
+    const y = Math.floor((e.clientY - rect.top) * canvas.height / rect.height);
 
-    // const size = sizeInput.value;
-    // ctx.fillStyle = currentMainColor;
-    // ctx.fillRect(x - size / 2, y - size / 2, size, size);
+    // Same point
+    if (strokePoints.length > 1 && x == strokePoints[strokePoints.length - 1].x && y == strokePoints[strokePoints.length - 1].y) return;
+
+    // Replace old point if it was on the same line and behind the new one.
+    // Makes one pixel wide straight lines look much better.
+    var replaced = false
+    if (strokePoints.length >= 2) {
+        const start    = strokePoints[strokePoints.length - 2];
+        const previous = strokePoints[strokePoints.length - 1];
+
+        const ax = previous.x - start.x;
+        const ay = previous.y - start.y;
+
+        const bx = x - start.x;
+        const by = y - start.y;
+
+        // Point on the same line: ax / ay = bx / by 
+        // Note: exact equality is okay since the coordinates are rounded to integers
+        if (ax * by == ay * bx) { 
+            const dotBA = bx * ax + by * ay;
+            const dotAA = ax * ax + ay * ay;
+            // New point is further along the line 
+            if (dotBA > dotAA) {
+                replaced = true;
+                strokePoints[strokePoints.length - 1] = { x, y }; 
+            }
+        }     
+    }     
+    if (!replaced) strokePoints.push({ x: x, y: y });
+    
+    if (strokePoints.length == 1) {
+        ctx.beginPath();
+
+        ctx.moveTo(x + 0.5, y + 0.5);
+        ctx.lineTo(x + 0.5, y + 0.5);
+        ctx.stroke();
+    } else {
+        const previous = strokePoints[strokePoints.length - 2];
+        ctx.beginPath();
+
+        ctx.moveTo(previous.x + 0.5, previous.y + 0.5);
+        ctx.lineTo(x + 0.5, y + 0.5);
+
+        ctx.stroke();
+    }
 }
 
 function toggleChat() {
