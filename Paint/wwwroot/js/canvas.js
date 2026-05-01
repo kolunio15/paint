@@ -1,3 +1,4 @@
+"use strict";
 // Canvas DOM elements
 const container = document.getElementById("canvasContainer");
 const canvas = document.getElementById("paintCanvas");
@@ -23,6 +24,7 @@ let canvasBitmapBeforeStroke = null;
 const connection = {
     ws: null,
     connected: false,
+    id: Math.random(), // FIXME
 
     connect() {
         const roomId = new URLSearchParams(window.location.search).get('roomId');
@@ -35,22 +37,42 @@ const connection = {
             console.info('WebSocket opened');
             showNewMessage("**System**: connected");
             this.connected = true;
+            this.requestEvents(events.recievedVersion + 1);
         }
         this.ws.onerror = (e) => {
             console.error("WebSocket error:", e);
        
         }
-        this.ws.onmessage = (e) => {
+        this.ws.onmessage = async (e) => {
             console.log("WebSocket recieved:", e.data);
 
             if (e.data.startsWith("msg ")) {
                 showNewMessage(e.data.substring("msg ".length));
+            } else if (e.data.startsWith("new_version ")) {
+                const version = Number(e.data.substring("new_version ".length));
+                console.log("new version", version);
+                
+                events.newestVersion = version;
+                this.requestEvents(events.recievedVersion + 1);
+                
+            } else if (e.data.startsWith("event ")) {
+                const content = e.data.substring("event ".length);
+                const objectStart = content.indexOf("{");
+
+                const id = Number(content.substring(0, objectStart));
+                const event = JSON.parse(content.substring(objectStart));
+
+                console.log("event recieved global_id: ", id, "event: ", event);
+
+                await events.eventRecieved(id, event)
+            } else {
+                console.log("unknown message");
             }
         },
         this.ws.onclose = (e) => {
             console.info("WebSocket closed");
             if (this.connected) showNewMessage("**System**: disconnected");
-            connected = false;
+            this.connected = false;
             setTimeout(() => { this.connect() }, 5_000); // TODO: Increase delay on with each failed attempt
         }
     },
@@ -60,6 +82,80 @@ const connection = {
         } catch (e) {
             console.error("error sending chat message: ", e);
         }
+    },
+    sendCanvasEvent(eventObj) {
+        this.ws.send("event " + JSON.stringify(eventObj));
+    },
+    requestEvents(start, end) {
+        if (!end) end = ''; 
+        this.ws.send(`get_events ${start} ${end}`);
+    }
+}
+
+const events = {
+    nextLocalEventId: 0,
+
+    global: [],
+    localDisplayed: [],
+
+    recievedVersion: -1,
+    newestVersion: 0,
+
+    async eventRecieved(globalId, event) {
+        if (globalId != this.recievedVersion + 1) return; // Out of order event, it could just be saved for later but whatever
+        this.global.push(event);
+
+        if (connection.id == event.connection && event.local == this.localDisplayed[0].local) {
+            this.localDisplayed.shift();
+        } else {
+            // needs to roll back to latest checkpoint before local changes and continue from there
+            
+            // TODO: don't redraw all events by using checkpoints
+            ctx.fillStyle = "white";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            for (const e of this.global) {
+                this.drawEvent(e);
+            }
+            for (const e of this.localDisplayed) {
+                this.drawEvent(e);
+            }
+
+            // If this event has been recieved during a stroke,
+            // after the stroke completes the canvasBitmapBeforeStroke will override changes made here.
+            // To prevent this render new bitmap immediately.
+
+            // TODO: Use requestAnimationFrame for all drawing to prevent flicker 
+            if (painting) {
+                canvasBitmapBeforeStroke = await createImageBitmap(canvas)
+
+                const width = Math.ceil(sizeInput.value);
+                const color = currentMainColor;
+                drawBrushStroke(width, color, strokePoints); // Stroke drawn so far is also lost, redraw it
+
+            }
+        }
+        this.recievedVersion = globalId;
+    },
+    drawEvent(e) {
+        if (e.kind == "brush") {
+            drawBrushStroke(e.width, e.color, e.points);
+        } else {
+            console.error("unknown event kind");
+        }
+    },
+    sendBrushStroke(width, color, points) {
+        const id = this.nextLocalEventId++;
+        const e = {
+            connection: connection.id,
+            local: id,
+            kind: "brush",
+            width: width,
+            color: color,
+            points: points
+        }
+        this.localDisplayed.push(e);
+        connection.sendCanvasEvent(e);
     },
 }
 
@@ -244,6 +340,11 @@ function draw(e) {
     }     
     if (!replaced) strokePoints.push({ x: x, y: y });
     
+    ctx.lineWidth = Math.ceil(sizeInput.value);
+    ctx.strokeStyle = currentMainColor;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+
     if (strokePoints.length == 1) {
         ctx.beginPath();
 

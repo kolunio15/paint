@@ -6,15 +6,16 @@ namespace Paint;
 
 class RoomConnections(ILogger<RoomConnections> logger)
 {
-    ILogger<RoomConnections> _logger = logger;
+    record Message;
+    record Connected(WebSocket Socket) : Message;
+    record Disconnected(WebSocket Socket) : Message;
+    record ChatMessage(string UserName, string Text) : Message;
+    record CanvasEvent(string Content) : Message;
+    record GetEvents(WebSocket connection, int StartId, int? EndId) : Message;
 
+    ILogger<RoomConnections> _logger = logger;
     class ActiveRoom
     {
-        public record Message;
-        public record Connected(WebSocket Socket)    : Message;
-        public record Disconnected(WebSocket Socket) : Message;
-        public record ChatMessage(string UserName, string Text) : Message;
-
         RoomConnections _roomConnections;
         string _roomId;
 
@@ -36,6 +37,9 @@ class RoomConnections(ILogger<RoomConnections> logger)
         {
             int nextConnectionId = 0;
             Dictionary<WebSocket, int> connectedSockets = [];
+
+            int nextGlobalId = 0;
+            List<(int GlobalId, string Content)> events = [];
 
             await foreach (var m in _backgroundChannel.Reader.ReadAllAsync())
             {
@@ -78,6 +82,32 @@ class RoomConnections(ILogger<RoomConnections> logger)
                         await Task.WhenAll(sendTasks);
                         break;
                     }
+                    case CanvasEvent(string content):
+                    {
+                        int id = nextGlobalId++;
+                        events.Add(new(id, content));
+
+                        var data = Encoding.UTF8.GetBytes($"new_version {id}");
+
+                        var sendTasks = connectedSockets.Keys.Select(socket =>
+                            socket.SendAsync(data, WebSocketMessageType.Text, true, CancellationToken.None));
+
+                        await Task.WhenAll(sendTasks);
+                        break;
+                    }
+                    case GetEvents(WebSocket connection, int startId, var endId):
+                    {
+                        foreach (var e in events)
+                        {
+                            if (e.GlobalId >= startId && (endId == null || e.GlobalId < endId.Value))
+                            {
+                                using var stream = WebSocketStream.CreateWritableMessageStream(connection, WebSocketMessageType.Text);
+                                using var writer = new StreamWriter(stream);
+                                await writer.WriteAsync($"event {e.GlobalId} {e.Content}");
+                            }
+                        }
+                        break;
+                    }
                     default: throw new NotImplementedException($"Not implemented message type {m.GetType().Name}");
                 }     
             }
@@ -97,33 +127,41 @@ class RoomConnections(ILogger<RoomConnections> logger)
                 _activeRooms.Add(roomId, room);
             }
         }
-        await room.Post(new ActiveRoom.Connected(socket));
+        await room.Post(new Connected(socket));
         
         try
         {
-            var buffer = new byte[4096];
             while (socket.State == WebSocketState.Open)
             {
-                var result = await socket.ReceiveAsync(buffer, CancellationToken.None);
-                var message = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                using var messageStream = WebSocketStream.CreateReadableMessageStream(socket);
+                using var reader = new StreamReader(messageStream, Encoding.UTF8);
+
+                string message = await reader.ReadToEndAsync();
+       
                 _logger.LogInformation("recieved message: '{0}'", message);
                 if (message.StartsWith("msg "))
                 {
                     string text = message["msg ".Length..];
+                    await room.Post(new ChatMessage(userName, text));
+                } 
+                else if (message.StartsWith("event ")) {
+                    string content = message["event ".Length..];
 
-                    if (!result.EndOfMessage) {
-                        _logger.LogInformation("Recieved too long chat message message, aborting connection.");
-                        await socket.CloseAsync(WebSocketCloseStatus.MessageTooBig, "Chat message is too long", CancellationToken.None); 
-                        return;
-                    }
+                    await room.Post(new CanvasEvent(content));
+                } 
+                else if (message.StartsWith("get_events"))
+                {
+                    int[] range = [.. message["get_events ".Length..].Split(' ', 2, StringSplitOptions.RemoveEmptyEntries).Select(int.Parse)];
+                    int start = range[0];
+                    int? end = range.Length > 1 ? range[1] : null;
 
-                    await room.Post(new ActiveRoom.ChatMessage(userName, text));
+                    await room.Post(new GetEvents(socket, start, end));
                 }
             }
         } 
         finally
         {
-            await room.Post(new ActiveRoom.Disconnected(socket));
+            await room.Post(new Disconnected(socket));
         }
     }
 
