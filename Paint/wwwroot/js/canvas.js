@@ -81,28 +81,48 @@ function initCanvas() {
     ctx.fillStyle = "white";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    canvas.addEventListener("mousedown", async (e) => {
-        ctx.lineWidth = Math.ceil(sizeInput.value);
-        ctx.lineCap = "round";
-        ctx.lineJoin = "round";
-        ctx.strokeStyle = currentMainColor;
+
+    async function pointerDown(e) {
+        e.preventDefault();
+       
         canvasBitmapBeforeStroke = await createImageBitmap(canvas);
 
         painting = true;
         strokePoints = []; 
         draw(e);
-    });
-    window.addEventListener("mouseup", () => {
+    }
+    function pointerUp(e) {
         painting = false;
         ctx.drawImage(canvasBitmapBeforeStroke, 0, 0);
-        ctx.beginPath();
-        ctx.moveTo(strokePoints[0].x + 0.5, strokePoints[0].y + 0.5);
-        for (const { x, y } of strokePoints) {
-            ctx.lineTo(x + 0.5, y + 0.5);
-        }
-        ctx.stroke();
-    });
+        drawBrushStroke(ctx.lineWidth, currentMainColor, strokePoints)
+        events.sendBrushStroke(ctx.lineWidth, currentMainColor, strokePoints);
+    }
+
+
+    canvas.addEventListener("mousedown", pointerDown);
+    canvas.addEventListener("touchstart", pointerDown);
+
+
+
+    window.addEventListener("mouseup", pointerUp);
+    window.addEventListener("touchend", pointerUp);
+
     window.addEventListener("mousemove", draw);
+    window.addEventListener("touchmove", draw);
+}
+
+function drawBrushStroke(width, color, points) {
+    console.log(width, color, points)
+    ctx.lineWidth = width;
+    ctx.strokeStyle = color;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+    ctx.moveTo(points[0].x + 0.5, points[0].y + 0.5);
+    for (const { x, y } of points) {
+        ctx.lineTo(x + 0.5, y + 0.5);
+    }
+    ctx.stroke();
 }
 
 function initPallette() {
@@ -175,8 +195,24 @@ function draw(e) {
     if (!painting) return;
     const rect = canvas.getBoundingClientRect();
 
-    const x = Math.floor((e.clientX - rect.left) * canvas.width / rect.width);
-    const y = Math.floor((e.clientY - rect.top) * canvas.height / rect.height);
+    function getClientCoords(e) {
+        if (e.touches && e.touches.length > 0) {
+            return {
+                x: e.touches[0].clientX,
+                y: e.touches[0].clientY
+            };
+        } else {
+            return {
+                x: e.clientX,
+                y: e.clientY
+            };
+        }
+    }
+
+    let { x, y } = getClientCoords(e);
+
+    x = Math.floor((x - rect.left) * canvas.width / rect.width);
+    y = Math.floor((y - rect.top) * canvas.height / rect.height);
 
     // Same point
     if (strokePoints.length > 1 && x == strokePoints[strokePoints.length - 1].x && y == strokePoints[strokePoints.length - 1].y) return;
