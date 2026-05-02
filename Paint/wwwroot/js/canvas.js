@@ -105,40 +105,64 @@ const events = {
     recievedVersion: -1,
     newestVersion: 0,
 
+    undoStack: [],
+    undoStackIndex: -1,
+
+    redrawFromCheckpoint() {
+        // TODO: let the caller specify from which checkpoint to redraw
+
+        function key(connection, localId) {
+            return `${connection}:${localId}`;
+        } 
+
+        function* allEvents(events) {
+            yield* events.global;
+            yield* events.localDisplayed;
+        }
+
+        const visibleOverride = new Map();
+
+        for (const e of allEvents(this)) {
+            if (e.kind == "visible") {
+                visibleOverride.set(key(e.connection, e.target), e.visible);
+            } 
+        }
+
+        ctx.fillStyle = "white";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        for (const e of allEvents(this)) {
+            if (e.kind == "visible" || visibleOverride.get(key(e.connection, e.local)) === false) continue
+            drawEvent(e);
+        }  
+    },
+
     async processPendingEvents() {
+        let needsNewBitmapBeforeStroke = false;
+
         for (const {globalId, event} of this.globalPending) {
             this.global.push(event);
 
             if (connection.id == event.connection && (this.localDisplayed.length == 0 || event.local == this.localDisplayed[0].local)) {
                 this.localDisplayed.shift();
             } else {
-                // needs to roll back to latest checkpoint before local changes and continue from there
-            
-                // TODO: don't redraw all events by using checkpoints
-                ctx.fillStyle = "white";
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                this.redrawFromCheckpoint();
 
-                for (const e of this.global) {
-                    this.drawEvent(e);
-                }
-                for (const e of this.localDisplayed) {
-                    this.drawEvent(e);
-                }
-
-                // If this event has been recieved during a stroke,
-                // after the stroke completes the canvasBitmapBeforeStroke will override changes made here.
-                // To prevent this render new bitmap immediately.
-                if (painting) {
-                    canvasBitmapBeforeStroke = await createImageBitmap(canvas)
-
-                    const width = Math.ceil(sizeInput.value);
-                    const color = currentMainColor;
-                    drawBrushStroke(width, color, strokePoints); // Stroke drawn so far is also lost, redraw it
-
-                }
+                if (painting) needsNewBitmapBeforeStroke = true;
             }
         }
         this.globalPending.length = 0;
+
+        if (needsNewBitmapBeforeStroke) {
+            // If this event has been recieved during a stroke,
+            // after the stroke completes the canvasBitmapBeforeStroke will override changes made here.
+            // To prevent this render new bitmap immediately.
+            canvasBitmapBeforeStroke = await createImageBitmap(canvas)
+
+            const width = Math.ceil(sizeInput.value);
+            const color = currentMainColor;
+            drawBrushStroke(width, color, strokePoints); // Stroke drawn so far is also lost, redraw 
+        }
     },
     eventRecieved(globalId, event) {
         if (globalId != this.recievedVersion + 1) return; // Out of order event, it could just be saved for later but whatever
@@ -146,14 +170,7 @@ const events = {
         this.globalPending.push({ id: globalId, event: event });
         this.recievedVersion = globalId;
     },
-    drawEvent(e) {
-        if (e.kind == "brush") {
-            drawBrushStroke(e.width, e.color, e.points);
-        } else {
-            console.error("unknown event kind");
-        }
-    },
-    sendBrushStroke(width, color, points) {
+    commitBrushStroke(width, color, points) {
         const id = this.nextLocalEventId++;
         const e = {
             connection: connection.id,
@@ -165,7 +182,43 @@ const events = {
         }
         this.localDisplayed.push(e);
         connection.sendCanvasEvent(e);
+        
+        ctx.drawImage(canvasBitmapBeforeStroke, 0, 0);
+        drawEvent(e);
+
+        this.undoStack.length = this.undoStackIndex + 1; // truncate history 
+        this.undoStack.push(id);
+        this.undoStackIndex++;
     },
+    commitSetVisible(localId, visible) {
+        const id = this.nextLocalEventId++;
+        const e = {
+            connection: connection.id,
+            local: id,
+            target: localId,
+            kind: "visible",
+            visible: visible,
+        };
+        this.localDisplayed.push(e);
+        connection.sendCanvasEvent(e);
+        this.redrawFromCheckpoint();
+    },
+
+
+    undo() {
+        if (this.undoStackIndex > 0) {
+            const localId = this.undoStack[this.undoStackIndex];
+            this.undoStackIndex--;
+            this.commitSetVisible(localId, false);
+        }
+    },
+    redo() {
+        if (this.undoStackIndex < this.undoStack.length - 1) {
+            this.undoStackIndex++;
+            const localId = this.undoStack[this.undoStackIndex];
+            this.commitSetVisible(localId, true);
+        }
+    }
 }
 
 function initApp() {
@@ -195,6 +248,8 @@ function initCanvas() {
     window.addEventListener("mousemove", (e) => { inputEventQueue.push(e); });
     window.addEventListener("touchmove", (e) => { inputEventQueue.push(e); });
 
+    window.addEventListener("keydown", (e) => { inputEventQueue.push(e); });
+
     requestAnimationFrame(animationFrame)
 }
 
@@ -217,9 +272,7 @@ async function animationFrame(timestamp) {
             {
                 if (painting) {
                     painting = false;
-                    ctx.drawImage(canvasBitmapBeforeStroke, 0, 0);
-                    drawBrushStroke(ctx.lineWidth, currentMainColor, strokePoints)
-                    events.sendBrushStroke(ctx.lineWidth, currentMainColor, strokePoints);
+                    events.commitBrushStroke(ctx.lineWidth, currentMainColor, strokePoints);
                 }
                 break;
             }
@@ -227,6 +280,16 @@ async function animationFrame(timestamp) {
             case "touchmove":
             {
                 draw(e);
+                break;
+            }
+            case "keydown":
+            {
+                if (!painting) {
+                    if (e.ctrlKey && e.code == "KeyZ") {
+                        if (e.shiftKey) events.redo();
+                        else events.undo();
+                    }
+                }
                 break;
             }
         }
@@ -238,7 +301,13 @@ async function animationFrame(timestamp) {
     requestAnimationFrame(animationFrame);
 }
 
-
+function drawEvent(e) {
+    if (e.kind == "brush") {
+        drawBrushStroke(e.width, e.color, e.points);
+    } else {
+        console.error("unknown event kind");
+    }
+}
 
 function drawBrushStroke(width, color, points) {
     console.log(width, color, points)
