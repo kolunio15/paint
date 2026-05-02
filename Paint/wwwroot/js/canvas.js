@@ -21,6 +21,8 @@ let currentSecondaryColor = "#fff";
 let strokePoints = []
 let canvasBitmapBeforeStroke = null;
 
+let inputEventQueue = []
+
 const connection = {
     ws: null,
     connected: false,
@@ -64,7 +66,7 @@ const connection = {
 
                 console.log("event recieved global_id: ", id, "event: ", event);
 
-                await events.eventRecieved(id, event)
+                events.eventRecieved(id, event)
             } else {
                 console.log("unknown message");
             }
@@ -95,46 +97,53 @@ const connection = {
 const events = {
     nextLocalEventId: 0,
 
+    globalPending: [], // just recieved waiting for processing during animationFrame
     global: [],
+
     localDisplayed: [],
 
     recievedVersion: -1,
     newestVersion: 0,
 
-    async eventRecieved(globalId, event) {
-        if (globalId != this.recievedVersion + 1) return; // Out of order event, it could just be saved for later but whatever
-        this.global.push(event);
+    async processPendingEvents() {
+        for (const {globalId, event} of this.globalPending) {
+            this.global.push(event);
 
-        if (connection.id == event.connection && event.local == this.localDisplayed[0].local) {
-            this.localDisplayed.shift();
-        } else {
-            // needs to roll back to latest checkpoint before local changes and continue from there
+            if (connection.id == event.connection && (this.localDisplayed.length == 0 || event.local == this.localDisplayed[0].local)) {
+                this.localDisplayed.shift();
+            } else {
+                // needs to roll back to latest checkpoint before local changes and continue from there
             
-            // TODO: don't redraw all events by using checkpoints
-            ctx.fillStyle = "white";
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+                // TODO: don't redraw all events by using checkpoints
+                ctx.fillStyle = "white";
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            for (const e of this.global) {
-                this.drawEvent(e);
-            }
-            for (const e of this.localDisplayed) {
-                this.drawEvent(e);
-            }
+                for (const e of this.global) {
+                    this.drawEvent(e);
+                }
+                for (const e of this.localDisplayed) {
+                    this.drawEvent(e);
+                }
 
-            // If this event has been recieved during a stroke,
-            // after the stroke completes the canvasBitmapBeforeStroke will override changes made here.
-            // To prevent this render new bitmap immediately.
+                // If this event has been recieved during a stroke,
+                // after the stroke completes the canvasBitmapBeforeStroke will override changes made here.
+                // To prevent this render new bitmap immediately.
+                if (painting) {
+                    canvasBitmapBeforeStroke = await createImageBitmap(canvas)
 
-            // TODO: Use requestAnimationFrame for all drawing to prevent flicker 
-            if (painting) {
-                canvasBitmapBeforeStroke = await createImageBitmap(canvas)
+                    const width = Math.ceil(sizeInput.value);
+                    const color = currentMainColor;
+                    drawBrushStroke(width, color, strokePoints); // Stroke drawn so far is also lost, redraw it
 
-                const width = Math.ceil(sizeInput.value);
-                const color = currentMainColor;
-                drawBrushStroke(width, color, strokePoints); // Stroke drawn so far is also lost, redraw it
-
+                }
             }
         }
+        this.globalPending.length = 0;
+    },
+    eventRecieved(globalId, event) {
+        if (globalId != this.recievedVersion + 1) return; // Out of order event, it could just be saved for later but whatever
+
+        this.globalPending.push({ id: globalId, event: event });
         this.recievedVersion = globalId;
     },
     drawEvent(e) {
@@ -177,35 +186,59 @@ function initCanvas() {
     ctx.fillStyle = "white";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+    canvas.addEventListener("mousedown",  (e) => { inputEventQueue.push(e); });
+    canvas.addEventListener("touchstart", (e) => { e.preventDefault(); inputEventQueue.push(e); });
 
-    async function pointerDown(e) {
-        e.preventDefault();
-       
-        canvasBitmapBeforeStroke = await createImageBitmap(canvas);
+    window.addEventListener("mouseup",  (e) => { inputEventQueue.push(e); });
+    window.addEventListener("touchend", (e) => { inputEventQueue.push(e); });
 
-        painting = true;
-        strokePoints = []; 
-        draw(e);
-    }
-    function pointerUp(e) {
-        painting = false;
-        ctx.drawImage(canvasBitmapBeforeStroke, 0, 0);
-        drawBrushStroke(ctx.lineWidth, currentMainColor, strokePoints)
-        events.sendBrushStroke(ctx.lineWidth, currentMainColor, strokePoints);
-    }
+    window.addEventListener("mousemove", (e) => { inputEventQueue.push(e); });
+    window.addEventListener("touchmove", (e) => { inputEventQueue.push(e); });
 
-
-    canvas.addEventListener("mousedown", pointerDown);
-    canvas.addEventListener("touchstart", pointerDown);
-
-
-
-    window.addEventListener("mouseup", pointerUp);
-    window.addEventListener("touchend", pointerUp);
-
-    window.addEventListener("mousemove", draw);
-    window.addEventListener("touchmove", draw);
+    requestAnimationFrame(animationFrame)
 }
+
+async function animationFrame(timestamp) {
+    for (const e of inputEventQueue) {
+ 
+        switch (e.type) {
+            case "mousedown":
+            case "touchstart": 
+            {
+                canvasBitmapBeforeStroke = await createImageBitmap(canvas);
+
+                painting = true;
+                strokePoints = []; 
+                draw(e);
+                break;
+            }
+            case "mouseup":
+            case "touchend":
+            {
+                if (painting) {
+                    painting = false;
+                    ctx.drawImage(canvasBitmapBeforeStroke, 0, 0);
+                    drawBrushStroke(ctx.lineWidth, currentMainColor, strokePoints)
+                    events.sendBrushStroke(ctx.lineWidth, currentMainColor, strokePoints);
+                }
+                break;
+            }
+            case "mousemove":
+            case "touchmove":
+            {
+                draw(e);
+                break;
+            }
+        }
+    }
+    inputEventQueue.length = 0;
+
+    await events.processPendingEvents();
+
+    requestAnimationFrame(animationFrame);
+}
+
+
 
 function drawBrushStroke(width, color, points) {
     console.log(width, color, points)
