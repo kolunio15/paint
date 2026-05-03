@@ -23,6 +23,87 @@ let canvasBitmapBeforeStroke = null;
 
 let inputEventQueue = []
 
+let cache = {
+    db: null,
+
+    async init() {
+        this.roomId = new URLSearchParams(window.location.search).get('roomId');
+        if (this.roomId == null) this.roomId = "";
+
+        this.db = await new Promise((resolve, reject) => {
+            const openRequest = window.indexedDB.open("canvas_cache", 2);
+            openRequest.onsuccess = (e) => {
+                resolve(e.target.result);
+            };
+            openRequest.onerror = (e) => {
+                reject("failed to open db:" + e.target.error);
+            };
+            openRequest.onupgradeneeded = (e) => {
+                const db = e.target.result;
+                if (!db.objectStoreNames.contains("checkpoints")) db.createObjectStore("checkpoints", { keyPath: ["roomId", "globalId"]});
+            };
+        });
+    },
+    storeCheckpoint(globalId, image) {
+        const transaction = this.db.transaction(["checkpoints"], "readwrite");
+        const checkpoints = transaction.objectStore("checkpoints");
+
+        const request = checkpoints.put({
+            roomId: this.roomId,
+            globalId: globalId,
+            image: image,
+        });
+
+        request.onsuccess = () => { 
+            console.log("checkpoint saved", globalId);
+        };
+        request.onerror = () => {
+            console.error("failed to store checkpoint", request, e.target.error);
+        }
+    },
+    async accessCheckpointBefore(globalId) {
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction(["checkpoints"], "readwrite");
+            const store = transaction.objectStore("checkpoints");
+
+            if (globalId == 0) {
+               resolve(null);
+               return;
+            }
+
+            const searchRange = IDBKeyRange.bound(
+                [this.roomId, 0], 
+                [this.roomId, globalId], 
+                false, true // [0, globalId)
+            );
+
+
+            const request = store.openCursor(searchRange, "prev"); // go backwards to find newest
+            request.onsuccess = (e) => {
+                const cursor = e.target.result;
+                if (cursor && cursor.value.roomId == this.roomId) {
+                     this.nextCheckpointId = cursor.value.globalId + 10;
+                    resolve(cursor.value);
+                } else {
+                    resolve(null);
+                }
+            };
+            request.onerror = (e) => {
+                reject(e.target.error);
+            };
+
+
+            // Remove newer checkpoints as they may have had different hidden set
+            const deleteRange = IDBKeyRange.bound(
+                [this.roomId, globalId], 
+                [this.roomId, Number.MAX_SAFE_INTEGER], 
+            );
+            store.delete(deleteRange);
+        });
+    }
+
+}
+
 const connection = {
     ws: null,
     connected: false,
@@ -108,50 +189,93 @@ const events = {
     undoStack: [],
     undoStackIndex: -1,
 
-    redrawFromCheckpoint() {
-        // TODO: let the caller specify from which checkpoint to redraw
+    nextCheckpointId: 10,
 
-        function key(connection, localId) {
-            return `${connection}:${localId}`;
-        } 
+    localIdToGlobalId: new Map(),
+    
 
-        function* allEvents(events) {
-            yield* events.global;
+    key(connection, localId) {
+        return `${connection}:${localId}`;
+    },
+
+
+    async redrawFromCheckpoint(beforeGlobalId) {
+        console.log("find checkpoint before ", beforeGlobalId);
+        const checkpoint = await cache.accessCheckpointBefore(beforeGlobalId);
+        let checkpointGlobalId = -1;
+        if (checkpoint) {
+            checkpointGlobalId = checkpoint.globalId;
+
+            console.log("used checkpoint", checkpoint.globalId);
+
+            const bitmap = await createImageBitmap(checkpoint.image);
+            ctx.drawImage(bitmap, 0, 0);    
+            bitmap.close();
+        } else {
+            console.log("no checkpoint found before", beforeGlobalId);
+            ctx.fillStyle = "white";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+        
+        function* events(events, afterGlobalId) {
+            for (const e of events.global) {
+                if (e.globalId > afterGlobalId) {
+                    yield e;   
+                }
+            }
             yield* events.localDisplayed;
         }
 
-        const visibleOverride = new Map();
-
-        for (const e of allEvents(this)) {
+        const hidden = new Set();
+        for (const e of events(this, checkpointGlobalId)) {
             if (e.kind == "visible") {
-                visibleOverride.set(key(e.connection, e.target), e.visible);
+                if (e.visible) {
+                    hidden.delete(this.key(e.connection, e.target));
+                } else {
+                    hidden.add(this.key(e.connection, e.target));
+                }
             } 
         }
 
-        ctx.fillStyle = "white";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        for (const e of allEvents(this)) {
-            if (e.kind == "visible" || visibleOverride.get(key(e.connection, e.local)) === false) continue
-            drawEvent(e);
+        for (const e of events(this, checkpointGlobalId)) {
+            if (e.kind == "visible" || hidden.has(this.key(e.connection, e.local))) continue;
+            drawEvent(e);            
+            
+            if (e.globalId && e.globalId > this.nextCheckpointId) { // this only saves when the rollback was required
+                this.nextCheckpointId = e.globalId + 10;
+                canvas.toBlob((blob) => {
+                    cache.storeCheckpoint(e.globalId, blob);
+                });
+            }
         }  
     },
 
     async processPendingEvents() {
         let needsNewBitmapBeforeStroke = false;
 
-        for (const {globalId, event} of this.globalPending) {
-            this.global.push(event);
+        let redrawBeforeGlobalId = Number.MAX_SAFE_INTEGER;
+        let redrawRequired = false;
 
-            if (connection.id == event.connection && (this.localDisplayed.length == 0 || event.local == this.localDisplayed[0].local)) {
+        for (const {globalId, event} of this.globalPending) {
+            event.globalId = globalId;
+            this.global.push(event);
+            this.localIdToGlobalId.set(this.key(event.connection, event.local), globalId);
+
+            console.log("new_global with key", globalId, this.key(event.connection, event.local));
+
+            if (this.localDisplayed.length != 0 && connection.id == event.connection && event.local == this.localDisplayed[0].local) {
                 this.localDisplayed.shift();
             } else {
-                this.redrawFromCheckpoint();
-
+                redrawRequired = true;
+                if (event.kind == "visible") {
+                    const targetGlobalId = this.localIdToGlobalId.get(this.key(event.connection, event.target));
+                    redrawBeforeGlobalId = Math.min(redrawBeforeGlobalId, targetGlobalId);
+                } 
                 if (painting) needsNewBitmapBeforeStroke = true;
             }
         }
         this.globalPending.length = 0;
+        if (redrawRequired) await this.redrawFromCheckpoint(redrawBeforeGlobalId);
 
         if (needsNewBitmapBeforeStroke) {
             // If this event has been recieved during a stroke,
@@ -167,7 +291,7 @@ const events = {
     eventRecieved(globalId, event) {
         if (globalId != this.recievedVersion + 1) return; // Out of order event, it could just be saved for later but whatever
 
-        this.globalPending.push({ id: globalId, event: event });
+        this.globalPending.push({ globalId: globalId, event: event });
         this.recievedVersion = globalId;
     },
     commitBrushStroke(width, color, points) {
@@ -201,12 +325,18 @@ const events = {
         };
         this.localDisplayed.push(e);
         connection.sendCanvasEvent(e);
-        this.redrawFromCheckpoint();
+
+        let beforeGlobalId = this.localIdToGlobalId.get(this.key(connection.id, localId));
+        if (beforeGlobalId === undefined) {
+            console.assert(this.localDisplayed.some(e => e.local == localId));
+            beforeGlobalId = Number.MAX_SAFE_INTEGER; 
+        }
+        this.redrawFromCheckpoint(beforeGlobalId);
     },
 
 
     undo() {
-        if (this.undoStackIndex > 0) {
+        if (this.undoStackIndex >= 0) {
             const localId = this.undoStack[this.undoStackIndex];
             this.undoStackIndex--;
             this.commitSetVisible(localId, false);
@@ -221,7 +351,8 @@ const events = {
     }
 }
 
-function initApp() {
+async function initApp() {
+    await cache.init();
     initTools();
     initCanvas();
     initPallette();
@@ -484,4 +615,4 @@ function sendMessage() {
     }
 }
 
-initApp();
+await initApp();
