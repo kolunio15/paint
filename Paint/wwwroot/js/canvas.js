@@ -381,6 +381,7 @@ function initCanvas() {
 
     window.addEventListener("keydown", (e) => { inputEventQueue.push(e); });
 
+    window.addEventListener("dragstart", (e) => { e.preventDefault(); })
     requestAnimationFrame(animationFrame)
 }
 
