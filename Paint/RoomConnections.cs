@@ -1,6 +1,7 @@
 using System.Net.WebSockets;
 using System.Text;
 using System.Threading.Channels;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace Paint;
 
@@ -11,7 +12,8 @@ class RoomConnections(ILogger<RoomConnections> logger)
     record Disconnected(WebSocket Socket) : Message;
     record ChatMessage(string UserName, string Text) : Message;
     record CanvasEvent(string Content) : Message;
-    record GetEvents(WebSocket connection, int StartId, int? EndId) : Message;
+    record GetEvents(WebSocket Connection, int StartId, int? EndId) : Message;
+    record Broadcast(string Content) : Message;
 
     ILogger<RoomConnections> _logger = logger;
     class ActiveRoom
@@ -108,6 +110,14 @@ class RoomConnections(ILogger<RoomConnections> logger)
                         }
                         break;
                     }
+                    case Broadcast(string content):
+                    {
+                        var data = Encoding.UTF8.GetBytes($"broadcast {content}");
+                        var sendTasks = connectedSockets.Keys.Select(socket =>
+                            socket.SendAsync(data, WebSocketMessageType.Text, true, CancellationToken.None));
+                        await Task.WhenAll(sendTasks);
+                        break;
+                    }
                     default: throw new NotImplementedException($"Not implemented message type {m.GetType().Name}");
                 }     
             }
@@ -149,13 +159,18 @@ class RoomConnections(ILogger<RoomConnections> logger)
 
                     await room.Post(new CanvasEvent(content));
                 } 
-                else if (message.StartsWith("get_events"))
+                else if (message.StartsWith("get_events "))
                 {
                     int[] range = [.. message["get_events ".Length..].Split(' ', 2, StringSplitOptions.RemoveEmptyEntries).Select(int.Parse)];
                     int start = range[0];
                     int? end = range.Length > 1 ? range[1] : null;
 
                     await room.Post(new GetEvents(socket, start, end));
+                } 
+                else if (message.StartsWith("broadcast "))
+                {
+                    string content = message["broadcast ".Length..];
+                    await room.Post(new Broadcast(content));
                 }
             }
         } 

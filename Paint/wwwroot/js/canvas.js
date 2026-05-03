@@ -18,10 +18,19 @@ const sizeInput = document.getElementById("size");
 let painting = false;
 let currentMainColor = "#000";
 let currentSecondaryColor = "#fff";
+
+let strokeLocalId = -1;
 let strokePoints = []
-let canvasBitmapBeforeStroke = null;
+
+const canvasBeforeStroke = new OffscreenCanvas(1, 1);
+const canvasBeforeStrokeCtx = canvasBeforeStroke.getContext('2d');
 
 let inputEventQueue = []
+
+
+function currentBrush() {
+    return { width: Math.ceil(sizeInput.value), color: currentMainColor };
+}
 
 let cache = {
     db: null,
@@ -148,6 +157,18 @@ const connection = {
                 console.log("event recieved global_id: ", id, "event: ", event);
 
                 events.eventRecieved(id, event)
+            } else if (e.data.startsWith("broadcast ")) {
+                const obj = JSON.parse(e.data.substring("broadcast ".length));
+                console.log("broadcast recieved: ", obj);
+
+
+                if (obj.kind == "brushPreview") {
+                    events.brushPreviewRecieved(obj);
+                } else {
+                    console.error("unknown broadcast kind");
+                }
+
+
             } else {
                 console.log("unknown message");
             }
@@ -168,6 +189,13 @@ const connection = {
     },
     sendCanvasEvent(eventObj) {
         this.ws.send("event " + JSON.stringify(eventObj));
+    },
+    trySendBroadcast(obj) {
+        try {
+            this.ws.send("broadcast " + JSON.stringify(obj));
+        } catch (e) {
+            console.error("failed to send broadcast", e);
+        }
     },
     requestEvents(start, end) {
         if (!end) end = ''; 
@@ -194,10 +222,15 @@ const events = {
     localIdToGlobalId: new Map(),
     
 
+    brushStrokePreviews: new Map(), 
+    brushStrokePreviewsDirty: false,
+
+    newLocalId() {
+        return this.nextLocalEventId++;
+    },
     key(connection, localId) {
         return `${connection}:${localId}`;
     },
-
 
     async redrawFromCheckpoint(beforeGlobalId) {
         console.log("find checkpoint before ", beforeGlobalId);
@@ -251,15 +284,19 @@ const events = {
     },
 
     async processPendingEvents() {
-        let needsNewBitmapBeforeStroke = false;
-
         let redrawBeforeGlobalId = Number.MAX_SAFE_INTEGER;
         let redrawRequired = false;
 
         for (const {globalId, event} of this.globalPending) {
             event.globalId = globalId;
             this.global.push(event);
-            this.localIdToGlobalId.set(this.key(event.connection, event.local), globalId);
+            const key = this.key(event.connection, event.local);
+
+            this.localIdToGlobalId.set(key, globalId);
+            if (this.brushStrokePreviews.delete(key)) {
+                this.brushStrokePreviewsDirty = true;
+                console.log("removed");
+            }
 
             console.log("new_global with key", globalId, this.key(event.connection, event.local));
 
@@ -271,22 +308,29 @@ const events = {
                     const targetGlobalId = this.localIdToGlobalId.get(this.key(event.connection, event.target));
                     redrawBeforeGlobalId = Math.min(redrawBeforeGlobalId, targetGlobalId);
                 } 
-                if (painting) needsNewBitmapBeforeStroke = true;
+                
             }
         }
         this.globalPending.length = 0;
-        if (redrawRequired) await this.redrawFromCheckpoint(redrawBeforeGlobalId);
+        
+        if ((this.brushStrokePreviews.size > 0 && painting) || this.brushStrokePreviewsDirty || redrawRequired) {
+            await this.redrawFromCheckpoint(redrawBeforeGlobalId);
+            
+            this.brushStrokePreviewsDirty = false;
+            for (const preview of this.brushStrokePreviews.values()) {
+               drawBrushStroke(preview.brush, preview.points);   
+            }
 
-        if (needsNewBitmapBeforeStroke) {
-            // If this event has been recieved during a stroke,
-            // after the stroke completes the canvasBitmapBeforeStroke will override changes made here.
-            // To prevent this render new bitmap immediately.
-            canvasBitmapBeforeStroke = await createImageBitmap(canvas)
+            if (painting) {
+                // If this event has been recieved during a stroke,
+                // after the stroke completes the canvasBitmapBeforeStroke will override changes made here.
+                // To prevent this render new bitmap immediately.
+                canvasBeforeStrokeCtx.drawImage(canvas, 0, 0);
 
-            const width = Math.ceil(sizeInput.value);
-            const color = currentMainColor;
-            drawBrushStroke(width, color, strokePoints); // Stroke drawn so far is also lost, redraw 
+                drawBrushStroke(currentBrush(), strokePoints); // Stroke drawn so far is also lost, redraw 
+            }
         }
+     
     },
     eventRecieved(globalId, event) {
         if (globalId != this.recievedVersion + 1) return; // Out of order event, it could just be saved for later but whatever
@@ -294,28 +338,32 @@ const events = {
         this.globalPending.push({ globalId: globalId, event: event });
         this.recievedVersion = globalId;
     },
-    commitBrushStroke(width, color, points) {
-        const id = this.nextLocalEventId++;
+    brushPreviewRecieved(payload) {
+        if (payload.connection == connection.id) return;
+        this.brushStrokePreviews.set(this.key(payload.connection, payload.local), payload);
+        this.brushStrokePreviewsDirty = true;
+    },
+    commitBrushStroke(localId, brush, points) {
         const e = {
             connection: connection.id,
-            local: id,
+            local: localId,
             kind: "brush",
-            width: width,
-            color: color,
+            brush: brush,
             points: points
         }
         this.localDisplayed.push(e);
         connection.sendCanvasEvent(e);
         
-        ctx.drawImage(canvasBitmapBeforeStroke, 0, 0);
+        ctx.drawImage(canvasBeforeStroke, 0, 0);
         drawEvent(e);
 
+
         this.undoStack.length = this.undoStackIndex + 1; // truncate history 
-        this.undoStack.push(id);
+        this.undoStack.push(localId);
         this.undoStackIndex++;
     },
     commitSetVisible(localId, visible) {
-        const id = this.nextLocalEventId++;
+        const id = this.newLocalId();
         const e = {
             connection: connection.id,
             local: id,
@@ -365,8 +413,8 @@ function initTools() {
 }
 
 function initCanvas() {
-    canvas.width = container.clientWidth - 40;
-    canvas.height = container.clientHeight - 40;
+    canvasBeforeStroke.width = canvas.width = container.clientWidth - 40;
+    canvasBeforeStroke.height = canvas.height = container.clientHeight - 40;
     ctx.fillStyle = "white";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -392,10 +440,13 @@ async function animationFrame(timestamp) {
             case "mousedown":
             case "touchstart": 
             {
-                canvasBitmapBeforeStroke = await createImageBitmap(canvas);
-
+                canvasBeforeStrokeCtx.drawImage(canvas, 0, 0);
+                
                 painting = true;
                 strokePoints = []; 
+
+                strokeLocalId = events.newLocalId();
+
                 draw(e);
                 break;
             }
@@ -404,7 +455,7 @@ async function animationFrame(timestamp) {
             {
                 if (painting) {
                     painting = false;
-                    events.commitBrushStroke(ctx.lineWidth, currentMainColor, strokePoints);
+                    events.commitBrushStroke(strokeLocalId, currentBrush(), strokePoints);
                 }
                 break;
             }
@@ -435,16 +486,15 @@ async function animationFrame(timestamp) {
 
 function drawEvent(e) {
     if (e.kind == "brush") {
-        drawBrushStroke(e.width, e.color, e.points);
+        drawBrushStroke(e.brush, e.points);
     } else {
         console.error("unknown event kind");
     }
 }
 
-function drawBrushStroke(width, color, points) {
-    console.log(width, color, points)
-    ctx.lineWidth = width;
-    ctx.strokeStyle = color;
+function drawBrushStroke(brush, points) {
+    ctx.lineWidth = brush.width;
+    ctx.strokeStyle = brush.color;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     ctx.beginPath();
@@ -574,8 +624,11 @@ function draw(e) {
     }     
     if (!replaced) strokePoints.push({ x: x, y: y });
     
-    ctx.lineWidth = Math.ceil(sizeInput.value);
-    ctx.strokeStyle = currentMainColor;
+
+    const brush = currentBrush();
+
+    ctx.lineWidth = brush.width;
+    ctx.strokeStyle = brush.color;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
 
@@ -594,6 +647,13 @@ function draw(e) {
 
         ctx.stroke();
     }
+    connection.trySendBroadcast({ 
+        kind: "brushPreview", 
+        connection: connection.id, 
+        local: strokeLocalId, 
+        brush: brush,
+        points: strokePoints 
+    });
 }
 
 function toggleChat() {
