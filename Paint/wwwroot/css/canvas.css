@@ -93,14 +93,18 @@
     background-color: #808080;
     border: 3px inset #ffffff;
     overflow: auto;
-    display: flex;
     min-width: 0;
+    position: relative;
 }
 
 .canvas-area > canvas {
-    background-color: white;
+    position: absolute;
+
+    top: 0;
+    left: 0;
+
     cursor: crosshair;
-    margin: auto;
+    margin: 0;
     image-rendering: pixelated;
 }
 

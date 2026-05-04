@@ -3,6 +3,8 @@
 const container = document.getElementById("canvasContainer");
 const canvas = document.getElementById("paintCanvas");
 const ctx = canvas.getContext("2d");
+const previewCanvas = document.getElementById("previewCanvas");
+const previewCtx = previewCanvas.getContext("2d");
 
 // Color DOM elements
 const mainColorDisplay = document.getElementById("mainColorDisplay");
@@ -21,9 +23,6 @@ let currentSecondaryColor = "#fff";
 
 let strokeLocalId = -1;
 let strokePoints = []
-
-const canvasBeforeStroke = new OffscreenCanvas(1, 1);
-const canvasBeforeStrokeCtx = canvasBeforeStroke.getContext('2d');
 
 let inputEventQueue = []
 
@@ -272,7 +271,7 @@ const events = {
 
         for (const e of events(this, checkpointGlobalId)) {
             if (e.kind == "visible" || hidden.has(this.key(e.connection, e.local))) continue;
-            drawEvent(e);            
+            drawEvent(ctx, e);            
             
             if (e.globalId && e.globalId > this.nextCheckpointId) { // this only saves when the rollback was required
                 this.nextCheckpointId = e.globalId + 10;
@@ -295,7 +294,6 @@ const events = {
             this.localIdToGlobalId.set(key, globalId);
             if (this.brushStrokePreviews.delete(key)) {
                 this.brushStrokePreviewsDirty = true;
-                console.log("removed");
             }
 
             console.log("new_global with key", globalId, this.key(event.connection, event.local));
@@ -313,24 +311,21 @@ const events = {
         }
         this.globalPending.length = 0;
         
-        if ((this.brushStrokePreviews.size > 0 && painting) || this.brushStrokePreviewsDirty || redrawRequired) {
-            await this.redrawFromCheckpoint(redrawBeforeGlobalId);
-            
+        if (redrawRequired) await this.redrawFromCheckpoint(redrawBeforeGlobalId);
+    
+        if (this.brushStrokePreviewsDirty) {
             this.brushStrokePreviewsDirty = false;
+
+            previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+            
             for (const preview of this.brushStrokePreviews.values()) {
-               drawBrushStroke(preview.brush, preview.points);   
+               drawBrushStroke(previewCtx, preview.brush, preview.points);   
             }
 
             if (painting) {
-                // If this event has been recieved during a stroke,
-                // after the stroke completes the canvasBitmapBeforeStroke will override changes made here.
-                // To prevent this render new bitmap immediately.
-                canvasBeforeStrokeCtx.drawImage(canvas, 0, 0);
-
-                drawBrushStroke(currentBrush(), strokePoints); // Stroke drawn so far is also lost, redraw 
+                drawBrushStroke(previewCtx, currentBrush(), strokePoints);
             }
         }
-     
     },
     eventRecieved(globalId, event) {
         if (globalId != this.recievedVersion + 1) return; // Out of order event, it could just be saved for later but whatever
@@ -353,10 +348,10 @@ const events = {
         }
         this.localDisplayed.push(e);
         connection.sendCanvasEvent(e);
-        
-        ctx.drawImage(canvasBeforeStroke, 0, 0);
-        drawEvent(e);
 
+        this.brushStrokePreviewsDirty = true;
+
+        drawEvent(ctx, e);
 
         this.undoStack.length = this.undoStackIndex + 1; // truncate history 
         this.undoStack.push(localId);
@@ -413,8 +408,9 @@ function initTools() {
 }
 
 function initCanvas() {
-    canvasBeforeStroke.width = canvas.width = container.clientWidth - 40;
-    canvasBeforeStroke.height = canvas.height = container.clientHeight - 40;
+    // TODO: Get size when connecting
+    previewCanvas.width  = canvas.width  = 1024;
+    previewCanvas.height = canvas.height = 1024;
     ctx.fillStyle = "white";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -440,8 +436,6 @@ async function animationFrame(timestamp) {
             case "mousedown":
             case "touchstart": 
             {
-                canvasBeforeStrokeCtx.drawImage(canvas, 0, 0);
-                
                 painting = true;
                 strokePoints = []; 
 
@@ -484,15 +478,15 @@ async function animationFrame(timestamp) {
     requestAnimationFrame(animationFrame);
 }
 
-function drawEvent(e) {
+function drawEvent(ctx, e) {
     if (e.kind == "brush") {
-        drawBrushStroke(e.brush, e.points);
+        drawBrushStroke(ctx, e.brush, e.points);
     } else {
         console.error("unknown event kind");
     }
 }
 
-function drawBrushStroke(brush, points) {
+function drawBrushStroke(ctx, brush, points) {
     ctx.lineWidth = brush.width;
     ctx.strokeStyle = brush.color;
     ctx.lineCap = "round";
@@ -623,30 +617,12 @@ function draw(e) {
         }     
     }     
     if (!replaced) strokePoints.push({ x: x, y: y });
-    
+
 
     const brush = currentBrush();
+    
 
-    ctx.lineWidth = brush.width;
-    ctx.strokeStyle = brush.color;
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-
-    if (strokePoints.length == 1) {
-        ctx.beginPath();
-
-        ctx.moveTo(x + 0.5, y + 0.5);
-        ctx.lineTo(x + 0.5, y + 0.5);
-        ctx.stroke();
-    } else {
-        const previous = strokePoints[strokePoints.length - 2];
-        ctx.beginPath();
-
-        ctx.moveTo(previous.x + 0.5, previous.y + 0.5);
-        ctx.lineTo(x + 0.5, y + 0.5);
-
-        ctx.stroke();
-    }
+    events.brushStrokePreviewsDirty = true;
     connection.trySendBroadcast({ 
         kind: "brushPreview", 
         connection: connection.id, 
