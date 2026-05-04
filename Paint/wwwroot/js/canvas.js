@@ -425,7 +425,32 @@ function initCanvas() {
 
     window.addEventListener("keydown", (e) => { inputEventQueue.push(e); });
 
-    window.addEventListener("dragstart", (e) => { e.preventDefault(); })
+    window.addEventListener("dragstart", (e) => { e.preventDefault(); });
+
+    const zoomLevels = [0.125, 0.25, 0.5, 1, 2, 4, 8];
+    let zoomIndex = zoomLevels.indexOf(1); 
+
+    container.addEventListener('wheel', (e) => {
+        if (e.ctrlKey) { 
+            e.preventDefault();
+
+            if (e.deltaY < 0) {
+                zoomIndex = Math.min(zoomLevels.length - 1, zoomIndex + 1);
+            } else {
+                zoomIndex = Math.max(0, zoomIndex - 1);
+            }
+
+            const scale = zoomLevels[zoomIndex];
+
+            const newWidth  = canvas.width  * scale;
+            const newHeight = canvas.height * scale;
+
+            previewCanvas.style.width  = canvas.style.width  = newWidth  + "px";
+            previewCanvas.style.height = canvas.style.height = newHeight + "px";
+           
+        }
+    }, { passive: false });
+
     requestAnimationFrame(animationFrame)
 }
 
@@ -617,7 +642,7 @@ function draw(e) {
         }     
     }     
     if (!replaced) strokePoints.push({ x: x, y: y });
-
+    
 
     const brush = currentBrush();
     
