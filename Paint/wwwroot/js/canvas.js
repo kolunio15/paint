@@ -676,5 +676,7 @@ function sendMessage() {
         chatInput.value = "";
     }
 }
+window.toggleChat  = toggleChat;
+window.sendMessage = sendMessage;
 
 await initApp();
