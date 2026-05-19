@@ -1,5 +1,11 @@
+using Microsoft.EntityFrameworkCore;
+using Paint.Data;
+
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRazorPages();
+
+builder.Services.AddDbContext<ApplicationDbContext>(options =>
+    options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 var app = builder.Build();
 
@@ -16,6 +22,7 @@ app.UseDefaultFiles();
 
 app.MapStaticAssets();
 
+app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapRazorPages()
