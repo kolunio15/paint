@@ -1,10 +1,23 @@
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Paint.Models;
 
 namespace Paint.Pages;
 
+[Authorize]
 public class AccountModel : PageModel
 {
+    private readonly UserManager<ApplicationUser> _userManager;
+    private readonly SignInManager<ApplicationUser> _signInManager;
+
+    public AccountModel(UserManager<ApplicationUser> userManager, SignInManager<ApplicationUser> signInManager)
+    {
+        _userManager = userManager;
+        _signInManager = signInManager;
+    }
+
     public string Username    { get; set; } = "Guest";
     public string UserId      { get; set; } = "";
     public string Bio         { get; set; } = "";
@@ -18,28 +31,35 @@ public class AccountModel : PageModel
     [BindProperty] public string? DisplayName { get; set; }
     [BindProperty] public string? BioInput    { get; set; }
 
-    public void OnGet()
+    public async Task<IActionResult> OnGetAsync()
     {
-        // TODO: replace with real data from your user service / database
-        Username     = User.Identity?.Name ?? "Guest";
-        UserId       = "a3f9c2b1";  // TODO: real user ID
+        var user = await _userManager.GetUserAsync(User);
+        if (user is null)
+        {
+            return Challenge();
+        }
+
+        Username     = user.UserName ?? "Guest";
+        UserId       = user.Id;
         Bio          = "I love painting!";
-        MemberSince  = new DateTime(1999, 4, 9);
-        LastActive   = new DateTime(1999, 4, 9);
-        ArtworkCount = 12;
-        TotalLikes   = 47;
-        RoomsJoined  = 5;
+        MemberSince  = user.CreatedAtUtc.ToLocalTime();
+        LastActive   = DateTime.Now;
+        ArtworkCount = 0;
+        TotalLikes   = 0;
+        RoomsJoined  = 0;
+
+        return Page();
     }
 
     public IActionResult OnPost()
     {
-        // TODO: validate & persist DisplayName, BioInput
         TempData["Message"] = "Profile updated.";
         return RedirectToPage();
     }
 
-    public IActionResult OnPostSignOut()
+    public async Task<IActionResult> OnPostSignOutAsync()
     {
-    return RedirectToPage("/Index");
+        await _signInManager.SignOutAsync();
+        return RedirectToPage("/Index");
     }
 }

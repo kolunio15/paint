@@ -3,3 +3,5 @@ Bin/
 *.vscode/
 *.vs/
 *.user
+*.db
+*.db-*
