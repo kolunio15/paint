@@ -1,20 +1,26 @@
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Paint;
+using Paint.Contracts;
+using Paint.Services;
 
 namespace Paint.Pages;
 
-public record Room(string Id, string Name, int UserCount, int MaxUsers, bool IsProtected);
-
 public class RoomsModel : PageModel
 {
-    public List<Room> ActiveRooms { get; set; } = [];
+    private readonly IRoomRepository _rooms;
+    private readonly RoomConnections _roomConnections;
 
-    public void OnGet()
+    public RoomsModel(IRoomRepository rooms, RoomConnections roomConnections)
     {
-        ActiveRooms = [
-            new Room("pokoj1", "SONIC OC ART TRADES (16+)", 12, 20, false),
-            new Room("pro-room", "(DE) Pixel Art Chill", 4, 10, false),
-            new Room("pixelart", "Ship your OCs 2!!", 8, 15, false),
-            new Room("test", "Pusty pokój testowy", 0, 5, true)
-        ];
+        _rooms = rooms;
+        _roomConnections = roomConnections;
+    }
+
+    public List<RoomSummaryDto> ActiveRooms { get; set; } = [];
+
+    public async Task OnGetAsync(CancellationToken cancellationToken)
+    {
+        var rooms = await _rooms.GetRoomsAsync(_roomConnections.GetActiveUserCounts(), cancellationToken);
+        ActiveRooms = rooms.ToList();
     }
 }

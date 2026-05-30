@@ -4,5 +4,7 @@ Bin/
 *.vs/
 *.user
 *.db
+*.db-*
+*.db
 *.db-shm
 *.db-wal

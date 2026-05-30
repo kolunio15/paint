@@ -75,7 +75,7 @@
                                style="padding: 2px 4px; font-size: 12px; width: 100%; font-family: inherit;">
 
                         <label for="bioInput">Bio:</label>
-                        <textarea id="bioInput" name="Bio" rows="3"
+                        <textarea id="bioInput" name="BioInput" rows="3"
                                   class="win-window-inset"
                                   style="padding: 2px 4px; font-size: 12px; width: 100%; font-family: inherit; resize: vertical;">@Model.Bio</textarea>
                     </div>
@@ -96,6 +96,9 @@
                     <div>
                         <div style="font-weight: bold; margin-bottom: 2px;">Sign Out</div>
                         <div style="color: #666; font-size: 11px;">You will be logged out and redirected to the home page.</div>
+                        <div style="margin-top: 4px;">
+                            <a asp-page="/Auth/ChangePassword">Change password</a>
+                        </div>
                     </div>
                     <button type="button" onclick="showLogoutDialog()"
                             class="toolbar-btn"
