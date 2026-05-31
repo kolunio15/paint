@@ -1,0 +1,40 @@
+@page
+@model Paint.Pages.Auth.LoginModel
+@{
+    ViewData["Title"] = "Log in";
+}
+
+<main style="max-width: 420px; margin: 32px auto;">
+    <h1>Log in</h1>
+
+    <form method="post">
+        <input type="hidden" asp-for="ReturnUrl" />
+        <div asp-validation-summary="ModelOnly" style="color: #8b0000;"></div>
+
+        <div style="margin-bottom: 12px;">
+            <label asp-for="Input.UserName"></label><br />
+            <input asp-for="Input.UserName" autocomplete="username" />
+            <span asp-validation-for="Input.UserName" style="color: #8b0000;"></span>
+        </div>
+
+        <div style="margin-bottom: 12px;">
+            <label asp-for="Input.Password"></label><br />
+            <input asp-for="Input.Password" autocomplete="current-password" />
+            <span asp-validation-for="Input.Password" style="color: #8b0000;"></span>
+        </div>
+
+        <div style="margin-bottom: 12px;">
+            <label>
+                <input asp-for="Input.RememberMe" />
+                Remember me
+            </label>
+        </div>
+
+        <button type="submit">Log in</button>
+    </form>
+
+    <p>
+        No account yet?
+        <a asp-page="/Auth/Register" asp-route-returnUrl="@Model.ReturnUrl">Register</a>
+    </p>
+</main>
