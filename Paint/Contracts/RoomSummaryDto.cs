@@ -5,4 +5,6 @@ public sealed record RoomSummaryDto(
     string Name,
     int UserCount,
     int MaxUsers,
+    int CanvasWidth,
+    int CanvasHeight,
     bool IsProtected);

@@ -30,11 +30,13 @@ public class RoomConnections
         string roomId,
         WebSocket socket,
         string userName,
-        string? userId = null,
+        string userId,
+        int canvasWidth,
+        int canvasHeight,
         CancellationToken cancellationToken = default)
     {
         var room = _activeRooms.GetOrAdd(roomId, id => new ActiveRoom(this, id));
-        await room.Post(new Connected(socket));
+        await room.Post(new Connected(socket, canvasWidth, canvasHeight));
 
         try
         {
@@ -64,7 +66,7 @@ public class RoomConnections
                     }
                     else
                     {
-                        await SendTextAsync(socket, "error invalid event range", CancellationToken.None);
+                        await room.Post(new ProtocolError(socket, "invalid event range"));
                     }
                 }
                 else if (message.StartsWith("broadcast ", StringComparison.Ordinal))
@@ -73,9 +75,16 @@ public class RoomConnections
                 }
                 else
                 {
-                    await SendTextAsync(socket, "error unsupported message", CancellationToken.None);
+                    await room.Post(new ProtocolError(socket, "unsupported message"));
                 }
             }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (WebSocketException exception)
+        {
+            _logger.LogInformation(exception, "WebSocket connection closed unexpectedly: room={RoomId}", roomId);
         }
         finally
         {
@@ -204,12 +213,13 @@ public class RoomConnections
     }
 
     private abstract record Message;
-    private sealed record Connected(WebSocket Socket) : Message;
+    private sealed record Connected(WebSocket Socket, int CanvasWidth, int CanvasHeight) : Message;
     private sealed record Disconnected(WebSocket Socket) : Message;
     private sealed record ChatMessage(string UserName, string Text) : Message;
-    private sealed record CanvasEvent(WebSocket Source, string Content, string? UserId) : Message;
+    private sealed record CanvasEvent(WebSocket Source, string Content, string UserId) : Message;
     private sealed record GetEvents(WebSocket Connection, int StartId, int? EndId) : Message;
     private sealed record Broadcast(string Content) : Message;
+    private sealed record ProtocolError(WebSocket Connection, string Text) : Message;
 
     private sealed class ActiveRoom
     {
@@ -240,8 +250,8 @@ public class RoomConnections
             {
                 switch (message)
                 {
-                    case Connected(var socket):
-                        await HandleConnectedAsync(socket);
+                    case Connected(var socket, var canvasWidth, var canvasHeight):
+                        await HandleConnectedAsync(socket, canvasWidth, canvasHeight);
                         break;
                     case Disconnected(var socket):
                         await HandleDisconnectedAsync(socket);
@@ -264,11 +274,14 @@ public class RoomConnections
                     case Broadcast(var content):
                         await BroadcastAsync($"broadcast {content}");
                         break;
+                    case ProtocolError(var connection, var text):
+                        await SendTextAsync(connection, $"error {text}", CancellationToken.None);
+                        break;
                 }
             }
         }
 
-        private async Task HandleConnectedAsync(WebSocket socket)
+        private async Task HandleConnectedAsync(WebSocket socket, int canvasWidth, int canvasHeight)
         {
             var connectionId = _nextConnectionId++;
             _connectedSockets[socket] = connectionId;
@@ -278,7 +291,13 @@ public class RoomConnections
                 _roomId,
                 connectionId);
 
-            await SendTextAsync(socket, $"assigned_id {connectionId}", CancellationToken.None);
+            var assigned = await SendTextAsync(socket, $"assigned_id {connectionId}", CancellationToken.None);
+            var sized = assigned && await SendTextAsync(socket, $"canvas_size {canvasWidth} {canvasHeight}", CancellationToken.None);
+            if (!sized)
+            {
+                _connectedSockets.Remove(socket);
+                Volatile.Write(ref _userCount, _connectedSockets.Count);
+            }
         }
 
         private async Task HandleDisconnectedAsync(WebSocket socket)
@@ -297,14 +316,8 @@ public class RoomConnections
             await BroadcastAsync($"disconnect {connectionId}");
         }
 
-        private async Task HandleCanvasEventAsync(WebSocket source, string content, string? userId)
+        private async Task HandleCanvasEventAsync(WebSocket source, string content, string userId)
         {
-            if (string.IsNullOrWhiteSpace(userId))
-            {
-                await SendTextAsync(source, "error authentication required", CancellationToken.None);
-                return;
-            }
-
             try
             {
                 var savedEvent = await _roomConnections.SaveRoomEventAsync(
@@ -327,24 +340,36 @@ public class RoomConnections
 
         private async Task HandleGetEventsAsync(WebSocket connection, int startId, int? endId)
         {
-            var events = await _roomConnections.LoadRoomEventsAsync(
-                _roomId,
-                startId,
-                endId,
-                CancellationToken.None);
-
-            foreach (var canvasEvent in events)
+            try
             {
-                var sent = await SendTextAsync(
-                    connection,
-                    $"event {canvasEvent.GlobalEventId} {canvasEvent.Content}",
+                var events = await _roomConnections.LoadRoomEventsAsync(
+                    _roomId,
+                    startId,
+                    endId,
                     CancellationToken.None);
 
-                if (!sent)
+                foreach (var canvasEvent in events)
                 {
-                    _connectedSockets.Remove(connection);
-                    break;
+                    var sent = await SendTextAsync(
+                        connection,
+                        $"event {canvasEvent.GlobalEventId} {canvasEvent.Content}",
+                        CancellationToken.None);
+
+                    if (!sent)
+                    {
+                        _connectedSockets.Remove(connection);
+                        Volatile.Write(ref _userCount, _connectedSockets.Count);
+                        break;
+                    }
                 }
+            }
+            catch (Exception exception)
+            {
+                _roomConnections._logger.LogWarning(
+                    exception,
+                    "Could not load canvas events: room={RoomId}",
+                    _roomId);
+                await SendTextAsync(connection, "error event load failed", CancellationToken.None);
             }
         }
 

@@ -6,7 +6,7 @@
 @section Style {
     <link rel="stylesheet" href="@Url.Content("~/css/canvas.css")" />
 }
-<script src="@Url.Content("~/js/canvas.js")" defer></script>
+<script type="module" src="@Url.Content("~/js/canvas.js")" defer></script>
 
 <div class="paint-app">
     <div class="menu-bar">
@@ -37,6 +37,7 @@
 
         <div class="canvas-area" id="canvasContainer">
             <canvas id="paintCanvas"></canvas>
+            <canvas id="previewCanvas" style="pointer-events: none;"></canvas>
         </div>
     </div>
 

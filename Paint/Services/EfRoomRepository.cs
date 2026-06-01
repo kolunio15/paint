@@ -61,6 +61,8 @@ public class EfRoomRepository : IRoomRepository
         {
             Name = request.Name.Trim(),
             MaxUsers = request.MaxUsers,
+            CanvasWidth = request.CanvasWidth,
+            CanvasHeight = request.CanvasHeight,
             IsProtected = !string.IsNullOrWhiteSpace(request.Password),
             CreatedAt = DateTime.UtcNow,
             OwnerId = ownerId
@@ -113,6 +115,9 @@ public class EfRoomRepository : IRoomRepository
         string userId,
         CancellationToken cancellationToken = default)
     {
+        var globalEventId = await _dbContext.CanvasEvents
+            .CountAsync(canvasEvent => canvasEvent.RoomId == roomId, cancellationToken);
+
         var canvasEvent = new CanvasEvent
         {
             RoomId = roomId,
@@ -125,7 +130,7 @@ public class EfRoomRepository : IRoomRepository
         _dbContext.CanvasEvents.Add(canvasEvent);
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        return ToEventDto(canvasEvent);
+        return ToEventDto(canvasEvent, globalEventId);
     }
 
     public async Task<IReadOnlyList<RoomEventDto>> GetRoomEventsAsync(
@@ -134,20 +139,18 @@ public class EfRoomRepository : IRoomRepository
         int? endGlobalId,
         CancellationToken cancellationToken = default)
     {
-        var query = _dbContext.CanvasEvents
+        var events = await _dbContext.CanvasEvents
             .AsNoTracking()
-            .Where(canvasEvent => canvasEvent.RoomId == roomId && canvasEvent.Id >= startGlobalId);
-
-        if (endGlobalId.HasValue)
-        {
-            query = query.Where(canvasEvent => canvasEvent.Id < endGlobalId.Value);
-        }
-
-        var events = await query
+            .Where(canvasEvent => canvasEvent.RoomId == roomId)
             .OrderBy(canvasEvent => canvasEvent.Id)
             .ToListAsync(cancellationToken);
 
-        return events.Select(ToEventDto).ToList();
+        return events
+            .Select(ToEventDto)
+            .Where(canvasEvent =>
+                canvasEvent.GlobalEventId >= startGlobalId &&
+                (!endGlobalId.HasValue || canvasEvent.GlobalEventId < endGlobalId.Value))
+            .ToList();
     }
 
     private static RoomSummaryDto ToSummary(Room room, int activeUserCount)
@@ -157,13 +160,15 @@ public class EfRoomRepository : IRoomRepository
             room.Name,
             activeUserCount,
             room.MaxUsers,
+            room.CanvasWidth,
+            room.CanvasHeight,
             room.IsProtected);
     }
 
-    private static RoomEventDto ToEventDto(CanvasEvent canvasEvent)
+    private static RoomEventDto ToEventDto(CanvasEvent canvasEvent, int globalEventId)
     {
         return new RoomEventDto(
-            canvasEvent.Id,
+            globalEventId,
             canvasEvent.RoomId,
             canvasEvent.Payload,
             canvasEvent.EventType,

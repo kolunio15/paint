@@ -45,7 +45,14 @@ public class RoomsController : ControllerBase
         }
 
         var room = await _rooms.CreateRoomAsync(request, userId, cancellationToken);
-        var summary = new RoomSummaryDto(room.Id, room.Name, 0, room.MaxUsers, room.IsProtected);
+        var summary = new RoomSummaryDto(
+            room.Id,
+            room.Name,
+            0,
+            room.MaxUsers,
+            room.CanvasWidth,
+            room.CanvasHeight,
+            room.IsProtected);
 
         return Created($"/api/rooms/{room.Id}", summary);
     }
