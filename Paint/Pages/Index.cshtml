@@ -6,7 +6,6 @@
 
 <main class="gallery">
     <div class="gallery-window">
-        <!-- Pasek tytułowy okna -->
         <div class="gallery-titlebar">
             <div class="titlebar-title">Exploring - Paint Gallery</div>
             <div class="gallery-titlebar-buttons">
@@ -16,21 +15,26 @@
             </div>
         </div>
 
-        <!-- Siatka prac -->
         <section>
+        @if (Model.Artworks.Count == 0)
+        {
+            <div style="padding: 40px; text-align: center; color: #808080; grid-column: 1/-1;">
+                No artworks yet. <a asp-page="/Rooms">Join a room</a> and start painting!
+            </div>
+        }
         @foreach (var artwork in Model.Artworks)
         {
             <article>
                 <figure>
                     <a asp-page="/Artwork" asp-route-id="@artwork.Id">
-                        <img src="@artwork.ImageUrl" alt="@artwork.Title">
+                        <img src="@artwork.ThumbnailUrl" alt="@artwork.Title">
                     </a>
                     <div>
                         <span class="gallery-art-title">@artwork.Title</span>
                         <div class="vote-controls">
-                            <button>+</button>
-                            <span class="vote-points @(artwork.Points < 0 ? "points-negative" : "points-positive")">@artwork.Points</span>
-                            <button>-</button>
+                            <button onclick="vote(@artwork.Id, 1)">+</button>
+                            <span class="vote-points @(artwork.Score < 0 ? "points-negative" : "points-positive")" id="score-@artwork.Id">@artwork.Score</span>
+                            <button onclick="vote(@artwork.Id, -1)">-</button>
                         </div>
                     </div>
                 </figure>
@@ -38,10 +42,32 @@
         }
         </section>
 
-        <!-- Pasek statusu -->
         <div class="gallery-statusbar">
             <span>@Model.Artworks.Count object(s)</span>
             <span>Ready</span>
         </div>
     </div>
 </main>
+
+<script>
+async function vote(artworkId, value) {
+    const res = await fetch(`/api/artworks/${artworkId}/vote`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vote: value })
+    });
+    if (res.status === 204) {
+        const detailRes = await fetch(`/api/artworks/${artworkId}`);
+        if (detailRes.ok) {
+            const artwork = await detailRes.json();
+            const el = document.getElementById('score-' + artworkId);
+            if (el) {
+                el.textContent = artwork.score;
+                el.className = 'vote-points ' + (artwork.score < 0 ? 'points-negative' : 'points-positive');
+            }
+        }
+    } else if (res.status === 401) {
+        window.location.href = '/Auth/Login';
+    }
+}
+</script>

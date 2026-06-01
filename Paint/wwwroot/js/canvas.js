@@ -23,12 +23,107 @@ let currentSecondaryColor = "#fff";
 
 let strokeLocalId = -1;
 let strokePoints = []
+let lineStartPoint = null;
 
 let inputEventQueue = []
+let currentTool = 'brush';
+
+let localFlipH = false;
+let localFlipV = false;
+
+let _panX = 0, _panY = 0, _zoom = 1.0;
+let _isPanning = false, _spaceDown = false;
+let _panStartX = 0, _panStartY = 0, _panStartPanX = 0, _panStartPanY = 0;
+let _canvasWrapper = null;
+
+function _clampPan() {
+    const minVisible = 80;
+    const displayW = canvas.width  * _zoom;
+    const displayH = canvas.height * _zoom;
+    const cw = container.clientWidth;
+    const ch = container.clientHeight;
+    _panX = Math.max(minVisible - displayW, Math.min(cw - minVisible, _panX));
+    _panY = Math.max(minVisible - displayH, Math.min(ch - minVisible, _panY));
+}
+
+function _applyViewTransform() {
+    if (_canvasWrapper) {
+        _clampPan();
+        _canvasWrapper.style.transform = `translate(${_panX}px,${_panY}px) scale(${_zoom})`;
+    }
+}
+
+function _fitCanvasToView() {
+    const cw = container.clientWidth;
+    const ch = container.clientHeight;
+    if (cw <= 0 || ch <= 0) return;
+    _zoom = Math.min(1.0, (cw - 80) / canvas.width, (ch - 80) / canvas.height);
+    _zoom = Math.max(0.1, _zoom);
+    _panX = (cw - canvas.width  * _zoom) / 2;
+    _panY = (ch - canvas.height * _zoom) / 2;
+    _applyViewTransform();
+}
 
 
 function currentBrush() {
-    return { width: Math.ceil(sizeInput.value), color: currentMainColor };
+    const width = Math.ceil(sizeInput.value);
+    if (currentTool === 'eraser')   return { width, color: '#ffffff' };
+    if (currentTool === 'pen')      return { width: 1, color: currentMainColor };
+    if (currentTool === 'airbrush') return { width, color: currentMainColor, airbrush: true };
+    return { width, color: currentMainColor };
+}
+
+function setCurrentTool(tool) {
+    currentTool = tool;
+    document.querySelectorAll('.tool[id]').forEach(el => el.classList.remove('active'));
+    const el = document.getElementById(tool);
+    if (el) el.classList.add('active');
+    if (_canvasWrapper) {
+        const cursors = { magnifier: 'grab', eyedropper: 'crosshair' };
+        canvas.style.cursor = cursors[tool] ?? 'crosshair';
+    }
+    lineStartPoint = null;
+    previewCtx?.clearRect(0, 0, previewCanvas?.width ?? 0, previewCanvas?.height ?? 0);
+}
+
+function floodFill(ctx, startX, startY, fillColor) {
+    const w = ctx.canvas.width, h = ctx.canvas.height;
+    const imgData = ctx.getImageData(0, 0, w, h);
+    const d = imgData.data;
+
+    const fr = parseInt(fillColor.slice(1, 3), 16);
+    const fg = parseInt(fillColor.slice(3, 5), 16);
+    const fb = parseInt(fillColor.slice(5, 7), 16);
+
+    const i0 = (startY * w + startX) * 4;
+    const tr = d[i0], tg = d[i0 + 1], tb = d[i0 + 2];
+
+    if (tr === fr && tg === fg && tb === fb) return;
+
+    const visited = new Uint8Array(w * h);
+    const queue   = new Int32Array(w * h);
+    let head = 0, tail = 0;
+
+    const enq = (x, y) => {
+        const pos = y * w + x;
+        if (visited[pos]) return;
+        visited[pos] = 1;
+        queue[tail++] = pos;
+    };
+    enq(startX, startY);
+
+    while (head < tail) {
+        const pos = queue[head++];
+        const x = pos % w, y = (pos / w) | 0;
+        const i = pos * 4;
+        if (Math.abs(d[i] - tr) + Math.abs(d[i+1] - tg) + Math.abs(d[i+2] - tb) > 48) continue;
+        d[i] = fr; d[i+1] = fg; d[i+2] = fb; d[i+3] = 255;
+        if (x > 0)     enq(x - 1, y);
+        if (x < w - 1) enq(x + 1, y);
+        if (y > 0)     enq(x, y - 1);
+        if (y < h - 1) enq(x, y + 1);
+    }
+    ctx.putImageData(imgData, 0, 0);
 }
 
 let cache = {
@@ -366,6 +461,24 @@ const events = {
         this.undoStack.push(localId);
         this.undoStackIndex++;
     },
+    commitShape(localId, kind, x1, y1, x2, y2, brush) {
+        const e = { connection: connection.id, local: localId, kind, x1, y1, x2, y2, brush };
+        this.localDisplayed.push(e);
+        connection.sendCanvasEvent(e);
+        drawEvent(ctx, e);
+        this.undoStack.length = this.undoStackIndex + 1;
+        this.undoStack.push(localId);
+        this.undoStackIndex++;
+    },
+    commitFill(localId, x, y, color) {
+        const e = { connection: connection.id, local: localId, kind: "fill", color, x, y };
+        this.localDisplayed.push(e);
+        connection.sendCanvasEvent(e);
+        drawEvent(ctx, e);
+        this.undoStack.length = this.undoStackIndex + 1;
+        this.undoStack.push(localId);
+        this.undoStackIndex++;
+    },
     commitSetVisible(localId, visible) {
         const id = this.newLocalId();
         const e = {
@@ -413,50 +526,154 @@ async function initApp() {
 }
 
 function initTools() {
-    // TODO: do proper tool selection and stuff... someday
+    ['pen', 'brush', 'eraser', 'bucket', 'eyedropper', 'magnifier', 'airbrush', 'line', 'rect', 'ellipse'].forEach(name => {
+        const el = document.getElementById(name);
+        if (el) el.addEventListener('click', () => setCurrentTool(name));
+    });
 }
 
 function initCanvas() {
+    _canvasWrapper = document.createElement('div');
+    _canvasWrapper.style.cssText = 'position:absolute;top:0;left:0;transform-origin:0 0;';
+    _canvasWrapper.appendChild(canvas);
+    _canvasWrapper.appendChild(previewCanvas);
+    container.appendChild(_canvasWrapper);
+
+    for (const c of [canvas, previewCanvas]) {
+        c.style.position       = 'absolute';
+        c.style.top            = '0';
+        c.style.left           = '0';
+        c.style.imageRendering = 'pixelated';
+    }
+    canvas.style.cursor = 'crosshair';
+
     setCanvasSize(1024, 1024);
 
-    canvas.addEventListener("mousedown",  (e) => { inputEventQueue.push(e); });
-    canvas.addEventListener("touchstart", (e) => { e.preventDefault(); inputEventQueue.push(e); });
+    let isPinching = false;
+    let pinchInit = null;
 
-    window.addEventListener("mouseup",  (e) => { inputEventQueue.push(e); });
-    window.addEventListener("touchend", (e) => { inputEventQueue.push(e); });
+    canvas.addEventListener("mousedown", (e) => {
+        if (e.button === 0 && !_spaceDown && !_isPanning) inputEventQueue.push(e);
+    });
 
-    window.addEventListener("mousemove", (e) => { inputEventQueue.push(e); });
-    window.addEventListener("touchmove", (e) => { inputEventQueue.push(e); });
-
-    window.addEventListener("keydown", (e) => { inputEventQueue.push(e); });
-
-    window.addEventListener("dragstart", (e) => { e.preventDefault(); });
-
-    const zoomLevels = [0.125, 0.25, 0.5, 1, 2, 4, 8];
-    let zoomIndex = zoomLevels.indexOf(1);
-
-    container.addEventListener('wheel', (e) => {
-        if (e.ctrlKey) {
+    canvas.addEventListener("touchstart", (e) => {
+        if (e.touches.length === 1 && !isPinching) {
             e.preventDefault();
-
-            if (e.deltaY < 0) {
-                zoomIndex = Math.min(zoomLevels.length - 1, zoomIndex + 1);
-            } else {
-                zoomIndex = Math.max(0, zoomIndex - 1);
-            }
-
-            const scale = zoomLevels[zoomIndex];
-
-            const newWidth  = canvas.width  * scale;
-            const newHeight = canvas.height * scale;
-
-            previewCanvas.style.width  = canvas.style.width  = newWidth  + "px";
-            previewCanvas.style.height = canvas.style.height = newHeight + "px";
-
+            inputEventQueue.push(e);
         }
     }, { passive: false });
 
-    requestAnimationFrame(animationFrame)
+    container.addEventListener("touchstart", (e) => {
+        if (e.touches.length >= 2) {
+            e.preventDefault();
+            isPinching = true;
+            painting = false;
+            const cr = container.getBoundingClientRect();
+            const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2 - cr.left;
+            const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2 - cr.top;
+            pinchInit = {
+                cx, cy,
+                dist: Math.hypot(e.touches[1].clientX - e.touches[0].clientX,
+                                 e.touches[1].clientY - e.touches[0].clientY),
+                panX: _panX, panY: _panY, zoom: _zoom
+            };
+        }
+    }, { passive: false });
+
+    window.addEventListener("mouseup", (e) => {
+        if (_isPanning && (e.button === 1 || e.button === 0)) {
+            _isPanning = false;
+            container.style.cursor = _spaceDown ? 'grab' : '';
+        }
+        inputEventQueue.push(e);
+    });
+    window.addEventListener("touchend", (e) => {
+        if (e.touches.length < 2) { isPinching = false; pinchInit = null; }
+        if (e.touches.length === 0 && _isPanning && (currentTool === 'hand' || currentTool === 'magnifier')) {
+            _isPanning = false;
+            canvas.style.cursor = 'grab';
+        }
+        inputEventQueue.push(e);
+    });
+
+    window.addEventListener("mousemove", (e) => {
+        if (_isPanning) {
+            _panX = _panStartPanX + (e.clientX - _panStartX);
+            _panY = _panStartPanY + (e.clientY - _panStartY);
+            _applyViewTransform();
+        }
+        inputEventQueue.push(e);
+    });
+    window.addEventListener("touchmove", (e) => {
+        if (isPinching && e.touches.length >= 2 && pinchInit) {
+            e.preventDefault();
+            const cr  = container.getBoundingClientRect();
+            const cx  = (e.touches[0].clientX + e.touches[1].clientX) / 2 - cr.left;
+            const cy  = (e.touches[0].clientY + e.touches[1].clientY) / 2 - cr.top;
+            const dist = Math.hypot(e.touches[1].clientX - e.touches[0].clientX,
+                                    e.touches[1].clientY - e.touches[0].clientY);
+
+            const newZoom = Math.max(0.1, Math.min(8, pinchInit.zoom * (dist / pinchInit.dist)));
+            const wx = (pinchInit.cx - pinchInit.panX) / pinchInit.zoom;
+            const wy = (pinchInit.cy - pinchInit.panY) / pinchInit.zoom;
+            _zoom = newZoom;
+            _panX = cx - wx * newZoom;
+            _panY = cy - wy * newZoom;
+            _applyViewTransform();
+        } else if (_isPanning && e.touches.length >= 1) {
+            e.preventDefault();
+            _panX = _panStartPanX + (e.touches[0].clientX - _panStartX);
+            _panY = _panStartPanY + (e.touches[0].clientY - _panStartY);
+            _applyViewTransform();
+        } else if (!isPinching && !_isPanning) {
+            inputEventQueue.push(e);
+        }
+    }, { passive: false });
+
+    window.addEventListener("keydown", (e) => {
+        if (e.code === 'Space' && !e.target.matches('input,textarea,[contenteditable]')) {
+            if (!_spaceDown) { _spaceDown = true; container.style.cursor = 'grab'; }
+            e.preventDefault();
+        }
+        inputEventQueue.push(e);
+    });
+    window.addEventListener("keyup", (e) => {
+        if (e.code === 'Space') {
+            _spaceDown = false;
+            if (!_isPanning) container.style.cursor = '';
+        }
+    });
+
+    window.addEventListener("dragstart", (e) => { e.preventDefault(); });
+
+    container.addEventListener("mousedown", (e) => {
+        if (e.button === 1 || (e.button === 0 && _spaceDown)) {
+            e.preventDefault();
+            _isPanning = true;
+            _panStartX    = e.clientX;
+            _panStartY    = e.clientY;
+            _panStartPanX = _panX;
+            _panStartPanY = _panY;
+            container.style.cursor = 'grabbing';
+        }
+    }, true);
+
+    container.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+        const cr = container.getBoundingClientRect();
+        const mx = e.clientX - cr.left, my = e.clientY - cr.top;
+        const wx = (mx - _panX) / _zoom, wy = (my - _panY) / _zoom;
+        _zoom = Math.max(0.1, Math.min(8, _zoom * factor));
+        _panX = mx - wx * _zoom;
+        _panY = my - wy * _zoom;
+        _applyViewTransform();
+    }, { passive: false });
+
+    window.canvasZoomReset  = _fitCanvasToView;
+    window.getCanvasZoom    = () => _zoom;
+
+    requestAnimationFrame(animationFrame);
 }
 
 function setCanvasSize(width, height) {
@@ -468,6 +685,8 @@ function setCanvasSize(width, height) {
     previewCanvas.style.width = canvas.style.width = width + "px";
     previewCanvas.style.height = canvas.style.height = height + "px";
 
+    if (_canvasWrapper) _fitCanvasToView();
+
     ctx.fillStyle = "white";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
@@ -476,31 +695,106 @@ function setCanvasSize(width, height) {
 async function animationFrame(timestamp) {
     for (const e of inputEventQueue) {
 
+        const clientXY = () => ({
+            x: e.clientX ?? e.touches?.[0]?.clientX,
+            y: e.clientY ?? e.touches?.[0]?.clientY
+        });
+        const canvasXY = (cx, cy) => {
+            const rect = canvas.getBoundingClientRect();
+            let x = Math.floor((cx - rect.left) * canvas.width  / rect.width);
+            let y = Math.floor((cy - rect.top)  * canvas.height / rect.height);
+            if (localFlipH) x = canvas.width  - 1 - x;
+            if (localFlipV) y = canvas.height - 1 - y;
+            return { x: Math.max(0, Math.min(canvas.width-1,  x)),
+                     y: Math.max(0, Math.min(canvas.height-1, y)) };
+        };
+
         switch (e.type) {
             case "mousedown":
             case "touchstart":
             {
-                painting = true;
-                strokePoints = [];
-
-                strokeLocalId = events.newLocalId();
-
-                draw(e);
+                const { x: cx, y: cy } = clientXY();
+                if (currentTool === 'hand' || currentTool === 'magnifier') {
+                    _isPanning = true;
+                    _panStartX = cx; _panStartY = cy;
+                    _panStartPanX = _panX; _panStartPanY = _panY;
+                    canvas.style.cursor = 'grabbing';
+                } else if (currentTool === 'eyedropper') {
+                    const { x, y } = canvasXY(cx, cy);
+                    const px = ctx.getImageData(x, y, 1, 1).data;
+                    selectColor('#' + [px[0], px[1], px[2]].map(v => v.toString(16).padStart(2,'0')).join(''));
+                } else if (currentTool === 'bucket') {
+                    const { x, y } = canvasXY(cx, cy);
+                    events.commitFill(events.newLocalId(), x, y, currentMainColor);
+                } else if (['line', 'rect', 'ellipse'].includes(currentTool)) {
+                    lineStartPoint = canvasXY(cx, cy);
+                    painting = true;
+                    strokeLocalId = events.newLocalId();
+                } else {
+                    painting = true;
+                    strokePoints = [];
+                    strokeLocalId = events.newLocalId();
+                    draw(e);
+                }
                 break;
             }
             case "mouseup":
             case "touchend":
             {
-                if (painting) {
+                if (['line', 'rect', 'ellipse'].includes(currentTool) && painting && lineStartPoint) {
+                    previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+                    const ex = e.clientX ?? e.changedTouches?.[0]?.clientX;
+                    const ey = e.clientY ?? e.changedTouches?.[0]?.clientY;
+                    const end = canvasXY(ex, ey);
+                    if (currentTool === 'line') {
+                        events.commitBrushStroke(strokeLocalId, currentBrush(), [lineStartPoint, end]);
+                    } else {
+                        events.commitShape(strokeLocalId, currentTool,
+                            lineStartPoint.x, lineStartPoint.y, end.x, end.y, currentBrush());
+                    }
+                    lineStartPoint = null; painting = false;
+                } else if (painting) {
                     painting = false;
                     events.commitBrushStroke(strokeLocalId, currentBrush(), strokePoints);
+                }
+                if (_isPanning && (currentTool === 'hand' || currentTool === 'magnifier')) {
+                    _isPanning = false;
+                    canvas.style.cursor = 'grab';
                 }
                 break;
             }
             case "mousemove":
             case "touchmove":
             {
-                draw(e);
+                if (['line', 'rect', 'ellipse'].includes(currentTool) && painting && lineStartPoint) {
+                    previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+                    const { x: cx, y: cy } = clientXY();
+                    const end = canvasXY(cx, cy);
+                    const b = currentBrush();
+                    previewCtx.save();
+                    previewCtx.strokeStyle = b.color;
+                    previewCtx.lineWidth   = b.width;
+                    if (currentTool === 'line') {
+                        drawBrushStroke(previewCtx, b, [lineStartPoint, end]);
+                    } else if (currentTool === 'rect') {
+                        previewCtx.lineCap = 'square'; previewCtx.lineJoin = 'miter';
+                        previewCtx.strokeRect(lineStartPoint.x + 0.5, lineStartPoint.y + 0.5,
+                            end.x - lineStartPoint.x, end.y - lineStartPoint.y);
+                    } else if (currentTool === 'ellipse') {
+                        const rx = Math.abs(end.x - lineStartPoint.x) / 2;
+                        const ry = Math.abs(end.y - lineStartPoint.y) / 2;
+                        if (rx > 0 && ry > 0) {
+                            previewCtx.beginPath();
+                            previewCtx.ellipse(
+                                (lineStartPoint.x + end.x) / 2, (lineStartPoint.y + end.y) / 2,
+                                rx, ry, 0, 0, Math.PI * 2);
+                            previewCtx.stroke();
+                        }
+                    }
+                    previewCtx.restore();
+                } else {
+                    draw(e);
+                }
                 break;
             }
             case "keydown":
@@ -523,14 +817,36 @@ async function animationFrame(timestamp) {
 }
 
 function drawEvent(ctx, e) {
-    if (e.kind == "brush") {
+    if (e.kind === "brush") {
         drawBrushStroke(ctx, e.brush, e.points);
+    } else if (e.kind === "fill") {
+        floodFill(ctx, e.x, e.y, e.color);
+    } else if (e.kind === "rect") {
+        ctx.save();
+        ctx.strokeStyle = e.brush.color;
+        ctx.lineWidth   = e.brush.width;
+        ctx.lineCap = 'square'; ctx.lineJoin = 'miter';
+        ctx.strokeRect(e.x1 + 0.5, e.y1 + 0.5, e.x2 - e.x1, e.y2 - e.y1);
+        ctx.restore();
+    } else if (e.kind === "ellipse") {
+        const rx = Math.abs(e.x2 - e.x1) / 2, ry = Math.abs(e.y2 - e.y1) / 2;
+        if (rx > 0 && ry > 0) {
+            ctx.save();
+            ctx.strokeStyle = e.brush.color;
+            ctx.lineWidth   = e.brush.width;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.ellipse((e.x1 + e.x2) / 2, (e.y1 + e.y2) / 2, rx, ry, 0, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+        }
     } else {
-        console.error("unknown event kind");
+        console.error("unknown event kind", e.kind);
     }
 }
 
 function drawBrushStroke(ctx, brush, points) {
+    if (brush.airbrush) { drawAirbrushStroke(ctx, brush, points); return; }
     ctx.lineWidth = brush.width;
     ctx.strokeStyle = brush.color;
     ctx.lineCap = "round";
@@ -541,6 +857,24 @@ function drawBrushStroke(ctx, brush, points) {
         ctx.lineTo(x + 0.5, y + 0.5);
     }
     ctx.stroke();
+}
+
+function drawAirbrushStroke(ctx, brush, points) {
+    const radius = brush.width * 4;
+    const dots   = Math.max(6, brush.width * 4);
+    ctx.fillStyle = brush.color;
+    for (const { x, y } of points) {
+        for (let i = 0; i < dots; i++) {
+            // same hash for same coords = same pattern on all clients
+            const t = (x * 3 + y * 7 + i * 137) % 628;
+            const r = ((x * 5 + y * 11 + i * 53) % 100) / 100 * radius;
+            ctx.fillRect(
+                Math.round(x + Math.cos(t / 100) * r),
+                Math.round(y + Math.sin(t / 100) * r),
+                2, 2
+            );
+        }
+    }
 }
 
 function initPallette() {
@@ -632,6 +966,9 @@ function draw(e) {
     x = Math.floor((x - rect.left) * canvas.width / rect.width);
     y = Math.floor((y - rect.top) * canvas.height / rect.height);
 
+    if (localFlipH) x = canvas.width  - 1 - x;
+    if (localFlipV) y = canvas.height - 1 - y;
+
     // Same point
     if (strokePoints.length > 1 && x == strokePoints[strokePoints.length - 1].x && y == strokePoints[strokePoints.length - 1].y) return;
 
@@ -695,7 +1032,18 @@ function sendMessage() {
         chatInput.value = "";
     }
 }
-window.toggleChat  = toggleChat;
-window.sendMessage = sendMessage;
+window.toggleChat       = toggleChat;
+window.sendMessage      = sendMessage;
+window.toggleMainColor  = toggleMainColor;
+window.selectColor      = selectColor;
+window.setTool          = setCurrentTool;
+window.setLocalFlip = (h, v) => {
+    localFlipH = h; localFlipV = v;
+    // flip is CSS-only, wrapper handles the rest
+    let t = '';
+    if (h) t += 'scaleX(-1) ';
+    if (v) t += 'scaleY(-1) ';
+    canvas.style.transform = previewCanvas.style.transform = t.trim();
+};
 
 await initApp();
