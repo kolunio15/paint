@@ -15,7 +15,22 @@
             <li><a asp-page="/Index"><img src="~/icons/homepage.ico" width="16" height="16" alt=""> Home</a></li>
             <li><a asp-page="/Rooms"><img src="~/icons/network_normal_two_pcs.ico" width="16" height="16" alt=""> Rooms</a></li>
             <li><a asp-page="/Canvas"><img src="~/icons/paint.ico" width="16" height="16" alt=""> Paint</a></li>
-            <li><a asp-page="/Account"><img src="~/icons/users.ico" width="16" height="16" alt=""> Account</a></li>
+            @if (User.Identity?.IsAuthenticated == true)
+            {
+                <li><a asp-page="/Account"><img src="~/icons/users.ico" width="16" height="16" alt=""> @User.Identity.Name</a></li>
+                <li>
+                    <form method="post" asp-page="/Account" asp-page-handler="SignOut" style="display:inline;">
+                        <button type="submit" style="font: inherit; background: transparent; border: 0; padding: 0; cursor: pointer;">
+                            <img src="~/icons/key_padlock.ico" width="16" height="16" alt=""> Log out
+                        </button>
+                    </form>
+                </li>
+            }
+            else
+            {
+                <li><a asp-page="/Auth/Login"><img src="~/icons/key.ico" width="16" height="16" alt=""> Log in</a></li>
+                <li><a asp-page="/Auth/Register"><img src="~/icons/address_book_user.ico" width="16" height="16" alt=""> Register</a></li>
+            }
         </ul>
     </nav>
     <div>
