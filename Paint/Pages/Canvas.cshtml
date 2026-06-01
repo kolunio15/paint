@@ -5,66 +5,157 @@
 
 @section Style {
     <link rel="stylesheet" href="@Url.Content("~/css/canvas.css")" />
+    <style>
+        .menu-bar {
+            display: flex;
+            background: #c0c0c0;
+            border-bottom: 1px solid #808080;
+            padding: 2px;
+            position: relative;
+            z-index: 1000;
+        }
+
+        .menu-item {
+            padding: 4px 10px;
+            cursor: pointer;
+            position: relative;
+            font-size: 14px;
+            user-select: none;
+        }
+
+        .menu-item:hover {
+            background: #000080;
+            color: white;
+        }
+
+        .dropdown {
+            display: none;
+            position: absolute;
+            top: 100%;
+            left: 0;
+            background: #c0c0c0;
+            border: 1px solid #808080;
+            border-top: none;
+            border-bottom: 2px solid #505050;
+            border-right: 2px solid #505050;
+            min-width: 150px;
+            flex-direction: column;
+        }
+
+        .menu-item:hover .dropdown {
+            display: flex;
+        }
+
+        .dropdown-item {
+            padding: 6px 12px;
+            font-size: 14px;
+            white-space: nowrap;
+            color: black;
+            display: block;
+            text-decoration: none;
+        }
+
+        .dropdown-item:hover {
+            background: #000080;
+            color: white;
+            cursor: pointer;
+        }
+
+        .canvas-area {
+            overflow: auto;
+            flex: 1;
+            position: relative;
+            touch-action: none;
+        }
+
+        /* Oznaczanie nieprzeczytanych wiadomości - tylko gwiazdka na końcu */
+        .chat-header.unread span:first-child::after {
+            content: "*";
+            color: red;
+            font-weight: bold;
+        }
+
+        .message.important {
+            color: red;
+            font-weight: bold;
+        }
+    </style>
 }
 <script type="module" src="@Url.Content("~/js/canvas.js")" defer></script>
 
 <div class="paint-app">
     <div class="menu-bar">
-        <div class="menu-item">File</div>
-        <div class="menu-item">Edit</div>
-        <div class="menu-item">View</div>
-        <div class="menu-item">Image</div>
-        <div class="menu-item">Colors</div>
-        <div class="menu-item">Help</div>
-    </div>
-
-    <div class="main-content">
-        <div class="toolbox">
-            <div class="tool" id="pen">✏️</div>
-            <div class="tool active" id="brush">🖌️</div>
-            <div class="tool" id="eraser">🧽</div>
-            <div class="tool" id="bucket">🪣</div>
-            <div class="tool"></div>
-            <div class="tool"></div>
-            <div class="tool"></div>
-            <div class="tool"></div>
-            <div class="tool"></div>
-            <div class="tool"></div>
-            <div class="tool-options">
-                <input type="range" id="size" min="1" max="20" value="2" />
+        <div class="menu-item">File
+            <div class="dropdown">
+                <div class="dropdown-item" onclick="saveImage()">💾 Save Image As...</div>
+            </div>
+        </div>
+        <div class="menu-item">Edit
+            <div class="dropdown">
+                <div class="dropdown-item" onclick="events.undo()">↩ Undo (Ctrl+Z)</div>
+                <div class="dropdown-item" onclick="events.redo()">↪ Redo (Ctrl+Shift+Z)</div>
+            </div>
+        </div>
+        <div class="menu-item">View
+            <div class="dropdown">
+                <div class="dropdown-item" onclick="zoomCanvas(1)">🔍 Zoom In</div>
+                <div class="dropdown-item" onclick="zoomCanvas(-1)">🔍 Zoom Out</div>
+            </div>
+        </div>
+        <div class="menu-item">Help
+            <div class="dropdown">
+                <a href="https://github.com/kolunio15/paint" target="_blank" class="dropdown-item">🐙 GitHub</a>
+                <a href="https://www.youtube.com/watch?v=dQw4w9WgXcQ" target="_blank" class="dropdown-item">🎓
+                    Tutorial</a>
+                </div>
             </div>
         </div>
 
-        <div class="canvas-area" id="canvasContainer">
-            <canvas id="paintCanvas"></canvas>
-            <canvas id="previewCanvas" style="pointer-events: none;"></canvas>
+        <div class="main-content">
+            <div class="toolbox">
+                <div class="tool" id="pen" title="Pen">✏️</div>
+                <div class="tool active" id="brush" title="Brush">🖌️</div>
+                <div class="tool" id="eraser" title="Eraser">🧽</div>
+                <div class="tool" id="bucket" title="Fill">🪣</div>
+                <div class="tool" id="lasso" title="Lasso">✂️</div>
+                <div class="tool" id="hand" title="Pan">✋</div>
+                <div class="tool" id="rect" title="Rectangle">⬜</div>
+                <div class="tool" id="ellipse" title="Ellipse">◯</div>
+                <div class="tool" id="line" title="Line">📏</div>
+                <div class="tool-options">
+                    <input type="range" id="size" min="1" max="20" value="2" title="Brush size" />
+                </div>
+            </div>
+
+            <div class="canvas-area" id="canvasContainer">
+                <canvas id="paintCanvas"></canvas>
+                <canvas id="previewCanvas" style="pointer-events: none;"></canvas>
+            </div>
         </div>
+
+        <div class="bottom-bar">
+            <div class="active-colors" onclick="toggleMainColor()" title="Swap colors">
+                <div id="mainColorDisplay" class="color-box main-color"></div>
+                <div id="secondaryColorDisplay" class="color-box secondary-color"></div>
+            </div>
+            <div class="palette" id="palette"></div>
+        </div>
+
+        <div class="status-bar">Also try Gimp!</div>
     </div>
 
-    <div class="bottom-bar">
-        <div class="active-colors" onclick="toggleMainColor()">
-            <div id="mainColorDisplay" class="color-box main-color"></div>
-            <div id="secondaryColorDisplay" class="color-box secondary-color"></div>
+    <div class="chat-container">
+        <div class="chat-header" id="chatHeader" onclick="toggleChat()">
+            <span>Room Chat</span>
+            <span class="indicator">▲</span>
         </div>
-        <div class="palette" id="palette"></div>
-    </div>
-
-    <div class="status-bar">Also try Gimp!</div>
-</div>
-
-<div class="chat-container">
-    <div class="chat-header" onclick="toggleChat()">
-        <span>Room Chat</span>
-        <span>▲</span>
-    </div>
-    <div class="chat-body" id="chatBody">
-        <div class="chat-messages" id="chatMessages">
-            <div class="message">**System**: Room pokoj1 created!</div>
-        </div>
-        <div class="chat-input-area">
-            <input type="text" id="chatInput" placeholder="Write something..." />
-            <button onclick="sendMessage()">Send</button>
+        <div class="chat-body" id="chatBody">
+            <div class="chat-messages" id="chatMessages">
+                <div class="message">**System**: Room joined!</div>
+            </div>
+            <div class="chat-input-area">
+                <input type="text" id="chatInput" placeholder="Write something..." />
+                <button onclick="sendMessage()">Send</button>
+            </div>
         </div>
     </div>
-</div>
-</div>

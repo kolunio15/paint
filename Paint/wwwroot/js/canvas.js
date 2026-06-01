@@ -1,292 +1,313 @@
 "use strict";
-// Canvas DOM elements
+
 const container = document.getElementById("canvasContainer");
 const canvas = document.getElementById("paintCanvas");
 const ctx = canvas.getContext("2d");
 const previewCanvas = document.getElementById("previewCanvas");
 const previewCtx = previewCanvas.getContext("2d");
 
-// Color DOM elements
 const mainColorDisplay = document.getElementById("mainColorDisplay");
 const secondaryColorDisplay = document.getElementById("secondaryColorDisplay");
 const palette = document.getElementById("palette");
 
-// Chat DOM elments
 const chatInput = document.getElementById("chatInput");
 const chatMessages = document.getElementById("chatMessages");
 const sizeInput = document.getElementById("size");
 
-// States
+const sessionClientId = crypto.randomUUID();
+
 let painting = false;
-let currentMainColor = "#000";
-let currentSecondaryColor = "#fff";
+let currentMainColor = "#000000";
+let currentSecondaryColor = "#ffffff";
+let currentTool = "brush";
+let strokeButton = 0;
 
 let strokeLocalId = -1;
-let strokePoints = []
+let strokePoints = [];
 
-let inputEventQueue = []
+let moveState = "idle";
+let moveStartPos = null;
+let moveSelectionRect = null;
+let moveOffscreenCanvas = null;
 
+let panState = { active: false, startX: 0, startY: 0, scrollX: 0, scrollY: 0 };
+
+let inputEventQueue = [];
+let reconnectDelay = 1000;
 
 function currentBrush() {
-    return { width: Math.ceil(sizeInput.value), color: currentMainColor };
+    const size = Math.ceil(sizeInput.value);
+    if (currentTool === "eraser") return { width: size, color: "#ffffff" };
+    const color = strokeButton === 2 ? currentSecondaryColor : currentMainColor;
+    if (currentTool === "pen") return { width: 1, color: color };
+    return { width: size, color: color };
 }
+
+const loadImg = (src) =>
+    new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.src = src;
+    });
 
 let cache = {
     db: null,
-
     async init() {
-        this.roomId = new URLSearchParams(window.location.search).get('roomId');
-        if (this.roomId == null) this.roomId = "";
-
+        this.roomId =
+            new URLSearchParams(window.location.search).get("roomId") || "";
         this.db = await new Promise((resolve, reject) => {
             const openRequest = window.indexedDB.open("canvas_cache", 2);
-            openRequest.onsuccess = (e) => {
-                resolve(e.target.result);
-            };
-            openRequest.onerror = (e) => {
+            openRequest.onsuccess = (e) => resolve(e.target.result);
+            openRequest.onerror = (e) =>
                 reject("failed to open db:" + e.target.error);
-            };
             openRequest.onupgradeneeded = (e) => {
                 const db = e.target.result;
-                if (!db.objectStoreNames.contains("checkpoints")) db.createObjectStore("checkpoints", { keyPath: ["roomId", "globalId"]});
+                if (!db.objectStoreNames.contains("checkpoints"))
+                    db.createObjectStore("checkpoints", {
+                        keyPath: ["roomId", "globalId"],
+                    });
             };
         });
+
+        if (!sessionStorage.getItem("db_cleared_" + this.roomId)) {
+            sessionStorage.setItem("db_cleared_" + this.roomId, "true");
+            const tx = this.db.transaction(["checkpoints"], "readwrite");
+            tx.objectStore("checkpoints").delete(
+                IDBKeyRange.bound(
+                    [this.roomId, 0],
+                    [this.roomId, Number.MAX_SAFE_INTEGER],
+                ),
+            );
+        }
     },
     storeCheckpoint(globalId, image) {
-        const transaction = this.db.transaction(["checkpoints"], "readwrite");
-        const checkpoints = transaction.objectStore("checkpoints");
-
-        const request = checkpoints.put({
-            roomId: this.roomId,
-            globalId: globalId,
-            image: image,
-        });
-
-        request.onsuccess = () => {
-            console.log("checkpoint saved", globalId);
+        this.db
+            .transaction(["checkpoints"], "readwrite")
+            .objectStore("checkpoints")
+            .put({
+                roomId: this.roomId,
+                globalId: globalId,
+                image: image,
+            }).onsuccess = () => {
+            this.pruneCheckpoints(globalId);
         };
-        request.onerror = () => {
-            console.error("failed to store checkpoint", request, e.target.error);
-        }
+    },
+    pruneCheckpoints(latestId) {
+        const store = this.db
+            .transaction(["checkpoints"], "readwrite")
+            .objectStore("checkpoints");
+        store.getAllKeys(
+            IDBKeyRange.bound([this.roomId, 0], [this.roomId, latestId]),
+        ).onsuccess = (e) => {
+            e.target.result.forEach((key) => {
+                const age = latestId - key[1];
+                let keep =
+                    age <= 50 ||
+                    (age <= 200 && key[1] % 50 === 0) ||
+                    (age <= 1000 && key[1] % 200 === 0) ||
+                    key[1] % 1000 === 0;
+                if (!keep) store.delete(key);
+            });
+        };
     },
     async accessCheckpointBefore(globalId) {
         return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction(["checkpoints"], "readwrite");
-            const store = transaction.objectStore("checkpoints");
-
+            const store = this.db
+                .transaction(["checkpoints"], "readwrite")
+                .objectStore("checkpoints");
             if (globalId == 0) {
-               resolve(null);
-               return;
+                resolve(null);
+                return;
             }
 
-            const searchRange = IDBKeyRange.bound(
-                [this.roomId, 0],
-                [this.roomId, globalId],
-                false, true // [0, globalId)
-            );
-
-
-            const request = store.openCursor(searchRange, "prev"); // go backwards to find newest
-            request.onsuccess = (e) => {
+            store.openCursor(
+                IDBKeyRange.bound(
+                    [this.roomId, 0],
+                    [this.roomId, globalId],
+                    false,
+                    true,
+                ),
+                "prev",
+            ).onsuccess = (e) => {
                 const cursor = e.target.result;
                 if (cursor && cursor.value.roomId == this.roomId) {
-                     this.nextCheckpointId = cursor.value.globalId + 10;
+                    this.nextCheckpointId = cursor.value.globalId + 10;
                     resolve(cursor.value);
                 } else {
                     resolve(null);
                 }
             };
-            request.onerror = (e) => {
-                reject(e.target.error);
-            };
-
-
-            // Remove newer checkpoints as they may have had different hidden set
-            const deleteRange = IDBKeyRange.bound(
-                [this.roomId, globalId],
-                [this.roomId, Number.MAX_SAFE_INTEGER],
+            store.delete(
+                IDBKeyRange.bound(
+                    [this.roomId, globalId],
+                    [this.roomId, Number.MAX_SAFE_INTEGER],
+                ),
             );
-            store.delete(deleteRange);
         });
-    }
-
-}
+    },
+};
 
 const connection = {
     ws: null,
     connected: false,
-    id: Math.random(), // FIXME
-
+    id: null,
     connect() {
-        const roomId = new URLSearchParams(window.location.search).get('roomId');
+        const roomId =
+            new URLSearchParams(window.location.search).get("roomId") || "1";
+        var url = new URL("/room_ws", window.location.href);
+        url.protocol = url.protocol.replace("http", "ws");
+        url.searchParams.set("roomId", roomId);
 
-        var url = new URL('/room_ws', window.location.href);
-        url.protocol = url.protocol.replace('http', 'ws');
-        url.searchParams.set('roomId', roomId);
         this.ws = new WebSocket(url.href);
-        this.ws.onopen = (e) => {
-            console.info('WebSocket opened');
-            showNewMessage("**System**: connected");
+        this.ws.onopen = () => {
+            showNewMessage("**System**: Connected to server.");
             this.connected = true;
-            this.requestEvents(events.recievedVersion + 1);
-        }
-        this.ws.onerror = (e) => {
-            console.error("WebSocket error:", e);
-
-        }
-        this.ws.onmessage = async (e) => {
-            console.log("WebSocket recieved:", e.data);
-
+            reconnectDelay = 1000;
+            this.requestEvents(Math.max(0, events.recievedVersion + 1));
+        };
+        this.ws.onerror = (e) => console.error("WebSocket error:", e);
+        ((this.ws.onmessage = async (e) => {
             if (e.data.startsWith("msg ")) {
                 showNewMessage(e.data.substring("msg ".length));
             } else if (e.data.startsWith("assigned_id ")) {
-                this.id = Number(e.data.substring("assigned_id ".length));
-                console.log("assigned connection id", this.id);
+                this.id = Number(e.data.split(" ")[1]);
             } else if (e.data.startsWith("canvas_size ")) {
-                const [width, height] = e.data
-                    .substring("canvas_size ".length)
-                    .split(" ", 2)
-                    .map(Number);
-                setCanvasSize(width, height);
+                const parts = e.data.split(" ");
+                const width = Number(parts[1]);
+                const height = Number(parts[2]);
+
+                if (canvas.width !== width || canvas.height !== height) {
+                    canvas.width = previewCanvas.width = width;
+                    canvas.height = previewCanvas.height = height;
+                    ctx.fillStyle = "white";
+                    ctx.fillRect(0, 0, width, height);
+                }
+
+                for (const ev of events.localDisplayed) {
+                    this.sendCanvasEvent(ev);
+                }
+                await events.redrawFromCheckpoint(Number.MAX_SAFE_INTEGER);
+            } else if (e.data.startsWith("disconnect ")) {
+                const endedConnectionId = Number(e.data.split(" ")[1]);
+                let dirty = false;
+                for (const [key, val] of events.brushStrokePreviews.entries()) {
+                    if (val.connection === endedConnectionId) {
+                        events.brushStrokePreviews.delete(key);
+                        dirty = true;
+                    }
+                }
+                if (dirty) events.brushStrokePreviewsDirty = true;
             } else if (e.data.startsWith("new_version ")) {
-                const version = Number(e.data.substring("new_version ".length));
-                console.log("new version", version);
-
-                events.newestVersion = version;
+                events.newestVersion = Number(
+                    e.data.substring("new_version ".length),
+                );
                 this.requestEvents(events.recievedVersion + 1);
-
             } else if (e.data.startsWith("event ")) {
                 const content = e.data.substring("event ".length);
                 const objectStart = content.indexOf("{");
-
-                const id = Number(content.substring(0, objectStart));
-                const event = JSON.parse(content.substring(objectStart));
-
-                console.log("event recieved global_id: ", id, "event: ", event);
-
-                events.eventRecieved(id, event)
+                events.eventRecieved(
+                    Number(content.substring(0, objectStart)),
+                    JSON.parse(content.substring(objectStart)),
+                );
             } else if (e.data.startsWith("broadcast ")) {
                 const obj = JSON.parse(e.data.substring("broadcast ".length));
-                console.log("broadcast recieved: ", obj);
-
-
-                if (obj.kind == "brushPreview") {
+                if (obj.kind == "brushPreview" || obj.kind == "shapePreview")
                     events.brushPreviewRecieved(obj);
-                } else {
-                    console.error("unknown broadcast kind");
-                }
-
-
-            } else {
-                console.log("unknown message");
+            } else if (e.data.startsWith("error ")) {
+                console.error("Server Error:", e.data);
             }
-        },
-        this.ws.onclose = (e) => {
-            console.info("WebSocket closed");
-            if (this.connected) showNewMessage("**System**: disconnected");
-            this.connected = false;
-            setTimeout(() => { this.connect() }, 5_000); // TODO: Increase delay on with each failed attempt
-        }
+        }),
+            (this.ws.onclose = () => {
+                if (this.connected)
+                    showNewMessage(
+                        "**System**: You have been disconnected! Working offline.",
+                        true,
+                    );
+                this.connected = false;
+                painting = false;
+                setTimeout(() => {
+                    reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+                    this.connect();
+                }, reconnectDelay);
+            }));
     },
     sendChatMessage(message) {
-        try {
-            this.ws.send("msg " + message);
-        } catch (e) {
-            console.error("error sending chat message: ", e);
-        }
+        if (this.connected) this.ws.send("msg " + message);
     },
     sendCanvasEvent(eventObj) {
-        this.ws.send("event " + JSON.stringify(eventObj));
+        if (this.connected) this.ws.send("event " + JSON.stringify(eventObj));
     },
     trySendBroadcast(obj) {
-        try {
-            this.ws.send("broadcast " + JSON.stringify(obj));
-        } catch (e) {
-            console.error("failed to send broadcast", e);
-        }
+        if (this.connected)
+            try {
+                this.ws.send("broadcast " + JSON.stringify(obj));
+            } catch (e) {}
     },
-    requestEvents(start, end) {
-        if (!end) end = '';
-        this.ws.send(`get_events ${start} ${end}`);
-    }
-}
+    requestEvents(start, end = "") {
+        if (this.ws?.readyState === WebSocket.OPEN)
+            this.ws.send(`get_events ${start} ${end}`);
+    },
+};
 
 const events = {
     nextLocalEventId: 0,
-
-    globalPending: [], // just recieved waiting for processing during animationFrame
+    globalPending: [],
     global: [],
-
     localDisplayed: [],
-
     recievedVersion: -1,
     newestVersion: 0,
-
     undoStack: [],
     undoStackIndex: -1,
-
     nextCheckpointId: 10,
-
     localIdToGlobalId: new Map(),
-
-
     brushStrokePreviews: new Map(),
     brushStrokePreviewsDirty: false,
 
     newLocalId() {
         return this.nextLocalEventId++;
     },
-    key(connection, localId) {
-        return `${connection}:${localId}`;
+    key(authorId, localId) {
+        return `${authorId}:${localId}`;
     },
 
     async redrawFromCheckpoint(beforeGlobalId) {
-        console.log("find checkpoint before ", beforeGlobalId);
         const checkpoint = await cache.accessCheckpointBefore(beforeGlobalId);
         let checkpointGlobalId = -1;
         if (checkpoint) {
             checkpointGlobalId = checkpoint.globalId;
-
-            console.log("used checkpoint", checkpoint.globalId);
-
             const bitmap = await createImageBitmap(checkpoint.image);
             ctx.drawImage(bitmap, 0, 0);
             bitmap.close();
         } else {
-            console.log("no checkpoint found before", beforeGlobalId);
             ctx.fillStyle = "white";
             ctx.fillRect(0, 0, canvas.width, canvas.height);
         }
 
-        function* events(events, afterGlobalId) {
-            for (const e of events.global) {
-                if (e.globalId > afterGlobalId) {
-                    yield e;
-                }
-            }
-            yield* events.localDisplayed;
+        const self = this;
+        function* getCombinedEvents(afterGlobalId) {
+            for (const e of self.global)
+                if (e.globalId > afterGlobalId) yield e;
+            yield* self.localDisplayed;
         }
 
         const hidden = new Set();
-        for (const e of events(this, checkpointGlobalId)) {
+        for (const e of getCombinedEvents(checkpointGlobalId)) {
             if (e.kind == "visible") {
-                if (e.visible) {
-                    hidden.delete(this.key(e.connection, e.target));
-                } else {
-                    hidden.add(this.key(e.connection, e.target));
-                }
+                const targetKey = this.key(e.targetAuthor, e.targetLocal);
+                if (e.visible) hidden.delete(targetKey);
+                else hidden.add(targetKey);
             }
         }
 
-        for (const e of events(this, checkpointGlobalId)) {
-            if (e.kind == "visible" || hidden.has(this.key(e.connection, e.local))) continue;
-            drawEvent(ctx, e);
-
-            if (e.globalId && e.globalId > this.nextCheckpointId) { // this only saves when the rollback was required
+        for (const e of getCombinedEvents(checkpointGlobalId)) {
+            if (e.kind == "visible" || hidden.has(this.key(e.author, e.local)))
+                continue;
+            await drawEvent(ctx, e);
+            if (e.globalId && e.globalId > this.nextCheckpointId) {
                 this.nextCheckpointId = e.globalId + 10;
-                canvas.toBlob((blob) => {
-                    cache.storeCheckpoint(e.globalId, blob);
-                });
+                canvas.toBlob((blob) =>
+                    cache.storeCheckpoint(e.globalId, blob),
+                );
             }
         }
     },
@@ -295,113 +316,194 @@ const events = {
         let redrawBeforeGlobalId = Number.MAX_SAFE_INTEGER;
         let redrawRequired = false;
 
-        for (const {globalId, event} of this.globalPending) {
-            event.globalId = globalId;
-            this.global.push(event);
-            const key = this.key(event.connection, event.local);
+        this.globalPending.sort((a, b) => a.globalId - b.globalId);
+        let i = 0;
 
-            this.localIdToGlobalId.set(key, globalId);
-            if (this.brushStrokePreviews.delete(key)) {
-                this.brushStrokePreviewsDirty = true;
+        while (i < this.globalPending.length) {
+            const pending = this.globalPending[i];
+            if (pending.globalId <= this.recievedVersion) {
+                this.globalPending.splice(i, 1);
+                continue;
             }
 
-            console.log("new_global with key", globalId, this.key(event.connection, event.local));
+            if (pending.globalId === this.recievedVersion + 1) {
+                this.recievedVersion = pending.globalId;
+                const event = pending.event;
+                event.globalId = pending.globalId;
+                const key = this.key(event.author, event.local);
 
-            if (this.localDisplayed.length != 0 && connection.id == event.connection && event.local == this.localDisplayed[0].local) {
-                this.localDisplayed.shift();
-            } else {
-                redrawRequired = true;
-                if (event.kind == "visible") {
-                    const targetGlobalId = this.localIdToGlobalId.get(this.key(event.connection, event.target));
-                    redrawBeforeGlobalId = Math.min(redrawBeforeGlobalId, targetGlobalId);
+                if (!this.localIdToGlobalId.has(key)) {
+                    this.global.push(event);
+                    this.localIdToGlobalId.set(key, pending.globalId);
+
+                    if (this.brushStrokePreviews.delete(key))
+                        this.brushStrokePreviewsDirty = true;
+
+                    if (
+                        this.localDisplayed.length != 0 &&
+                        event.author === this.localDisplayed[0].author &&
+                        event.local === this.localDisplayed[0].local
+                    ) {
+                        this.localDisplayed.shift();
+                    } else {
+                        redrawRequired = true;
+                        if (event.kind == "visible") {
+                            const targetKey = this.key(
+                                event.targetAuthor,
+                                event.targetLocal,
+                            );
+                            redrawBeforeGlobalId = Math.min(
+                                redrawBeforeGlobalId,
+                                this.localIdToGlobalId.get(targetKey) ??
+                                    Number.MAX_SAFE_INTEGER,
+                            );
+                        }
+                    }
                 }
-
+                this.globalPending.splice(i, 1);
+            } else {
+                connection.requestEvents(
+                    this.recievedVersion + 1,
+                    pending.globalId,
+                );
+                break;
             }
         }
-        this.globalPending.length = 0;
 
-        if (redrawRequired) await this.redrawFromCheckpoint(redrawBeforeGlobalId);
+        if (redrawRequired)
+            await this.redrawFromCheckpoint(redrawBeforeGlobalId);
 
         if (this.brushStrokePreviewsDirty) {
             this.brushStrokePreviewsDirty = false;
-
-            previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+            previewCtx.clearRect(
+                0,
+                0,
+                previewCanvas.width,
+                previewCanvas.height,
+            );
 
             for (const preview of this.brushStrokePreviews.values()) {
-               drawBrushStroke(previewCtx, preview.brush, preview.points);
+                if (preview.kind === "brushPreview")
+                    drawBrushStroke(previewCtx, preview.brush, preview.points);
+                else if (preview.kind === "shapePreview")
+                    drawShape(
+                        previewCtx,
+                        preview.shapeType,
+                        preview.brush,
+                        preview.points,
+                    );
             }
 
             if (painting) {
-                drawBrushStroke(previewCtx, currentBrush(), strokePoints);
+                if (["brush", "pen", "eraser"].includes(currentTool))
+                    drawBrushStroke(previewCtx, currentBrush(), strokePoints);
+                else if (["rect", "ellipse", "line"].includes(currentTool))
+                    drawShape(
+                        previewCtx,
+                        currentTool,
+                        currentBrush(),
+                        strokePoints,
+                    );
+            }
+
+            if (moveState === "selecting" && strokePoints.length > 0) {
+                previewCtx.lineWidth = 1;
+                previewCtx.setLineDash([4, 4]);
+                previewCtx.strokeStyle = "black";
+                previewCtx.beginPath();
+                previewCtx.moveTo(strokePoints[0].x, strokePoints[0].y);
+                for (let p of strokePoints) previewCtx.lineTo(p.x, p.y);
+                previewCtx.stroke();
+                previewCtx.setLineDash([]);
+            } else if (moveState === "selected" || moveState === "moving") {
+                previewCtx.save();
+                previewCtx.beginPath();
+                previewCtx.moveTo(strokePoints[0].x, strokePoints[0].y);
+                for (let i = 1; i < strokePoints.length; i++)
+                    previewCtx.lineTo(strokePoints[i].x, strokePoints[i].y);
+                previewCtx.closePath();
+                previewCtx.fillStyle = "white";
+                previewCtx.fill();
+                previewCtx.restore();
+
+                if (moveOffscreenCanvas)
+                    previewCtx.drawImage(
+                        moveOffscreenCanvas,
+                        moveSelectionRect.dx,
+                        moveSelectionRect.dy,
+                    );
+
+                previewCtx.lineWidth = 1;
+                previewCtx.setLineDash([4, 4]);
+                previewCtx.strokeStyle = "black";
+                previewCtx.strokeRect(
+                    moveSelectionRect.x + moveSelectionRect.dx,
+                    moveSelectionRect.y + moveSelectionRect.dy,
+                    moveSelectionRect.w,
+                    moveSelectionRect.h,
+                );
+                previewCtx.setLineDash([]);
             }
         }
     },
     eventRecieved(globalId, event) {
-        if (globalId != this.recievedVersion + 1) return; // Out of order event, it could just be saved for later but whatever
-
-        this.globalPending.push({ globalId: globalId, event: event });
-        this.recievedVersion = globalId;
+        if (
+            !this.global.some((e) => e.globalId === globalId) &&
+            !this.globalPending.some((e) => e.globalId === globalId)
+        ) {
+            this.globalPending.push({ globalId: globalId, event: event });
+        }
     },
     brushPreviewRecieved(payload) {
         if (payload.connection == connection.id) return;
-        this.brushStrokePreviews.set(this.key(payload.connection, payload.local), payload);
+        this.brushStrokePreviews.set(
+            this.key(payload.author, payload.local),
+            payload,
+        );
         this.brushStrokePreviewsDirty = true;
     },
-    commitBrushStroke(localId, brush, points) {
-        const e = {
-            connection: connection.id,
-            local: localId,
-            kind: "brush",
-            brush: brush,
-            points: points
-        }
+    async commitEvent(e) {
         this.localDisplayed.push(e);
         connection.sendCanvasEvent(e);
-
         this.brushStrokePreviewsDirty = true;
+        await drawEvent(ctx, e);
 
-        drawEvent(ctx, e);
-
-        this.undoStack.length = this.undoStackIndex + 1; // truncate history
-        this.undoStack.push(localId);
+        this.undoStack.length = this.undoStackIndex + 1;
+        this.undoStack.push(e);
         this.undoStackIndex++;
     },
-    commitSetVisible(localId, visible) {
-        const id = this.newLocalId();
+    commitSetVisible(targetEvent, visible) {
         const e = {
-            connection: connection.id,
-            local: id,
-            target: localId,
+            author: sessionClientId,
+            local: this.newLocalId(),
+            targetAuthor: targetEvent.author,
+            targetLocal: targetEvent.local,
             kind: "visible",
             visible: visible,
         };
         this.localDisplayed.push(e);
         connection.sendCanvasEvent(e);
 
-        let beforeGlobalId = this.localIdToGlobalId.get(this.key(connection.id, localId));
-        if (beforeGlobalId === undefined) {
-            console.assert(this.localDisplayed.some(e => e.local == localId));
-            beforeGlobalId = Number.MAX_SAFE_INTEGER;
-        }
-        this.redrawFromCheckpoint(beforeGlobalId);
+        const targetKey = this.key(targetEvent.author, targetEvent.local);
+        this.redrawFromCheckpoint(
+            this.localIdToGlobalId.get(targetKey) ?? Number.MAX_SAFE_INTEGER,
+        );
     },
-
-
     undo() {
         if (this.undoStackIndex >= 0) {
-            const localId = this.undoStack[this.undoStackIndex];
+            this.commitSetVisible(this.undoStack[this.undoStackIndex], false);
             this.undoStackIndex--;
-            this.commitSetVisible(localId, false);
         }
     },
     redo() {
         if (this.undoStackIndex < this.undoStack.length - 1) {
             this.undoStackIndex++;
-            const localId = this.undoStack[this.undoStackIndex];
-            this.commitSetVisible(localId, true);
+            this.commitSetVisible(this.undoStack[this.undoStackIndex], true);
         }
-    }
-}
+    },
+};
+
+window.events = events;
 
 async function initApp() {
     await cache.init();
@@ -412,139 +514,568 @@ async function initApp() {
     connection.connect();
 }
 
-function initTools() {
-    // TODO: do proper tool selection and stuff... someday
+function clearLassoSelection() {
+    moveState = "idle";
+    moveSelectionRect = null;
+    moveOffscreenCanvas = null;
+    events.brushStrokePreviewsDirty = true;
 }
+
+function initTools() {
+    const tools = document.querySelectorAll(".tool");
+    tools.forEach((tool) => {
+        tool.addEventListener("click", () => {
+            if (!tool.id) return;
+            clearLassoSelection();
+            tools.forEach((t) => t.classList.remove("active"));
+            tool.classList.add("active");
+            currentTool = tool.id;
+        });
+    });
+}
+
+const zoomLevels = [0.125, 0.25, 0.5, 1, 2, 4, 8];
+let zoomIndex = zoomLevels.indexOf(1);
+
+window.zoomCanvas = function (direction) {
+    zoomIndex =
+        direction > 0
+            ? Math.min(zoomLevels.length - 1, zoomIndex + 1)
+            : Math.max(0, zoomIndex - 1);
+    const scale = zoomLevels[zoomIndex];
+    previewCanvas.style.width = canvas.style.width =
+        canvas.width * scale + "px";
+    previewCanvas.style.height = canvas.style.height =
+        canvas.height * scale + "px";
+};
+
+window.saveImage = function () {
+    const link = document.createElement("a");
+    link.download = "canvas.png";
+    link.href = canvas.toDataURL("image/png");
+    link.click();
+};
+
+function handlePanEvent(e) {
+    if (currentTool !== "hand") return false;
+    if (e.type === "mousedown" || e.type === "touchstart") {
+        panState.active = true;
+        const client = getClientCoords(e);
+        panState.startX = client.x;
+        panState.startY = client.y;
+        panState.scrollX = container.scrollLeft;
+        panState.scrollY = container.scrollTop;
+        return true;
+    } else if (
+        (e.type === "mousemove" || e.type === "touchmove") &&
+        panState.active
+    ) {
+        const client = getClientCoords(e);
+        container.scrollLeft = panState.scrollX - (client.x - panState.startX);
+        container.scrollTop = panState.scrollY - (client.y - panState.startY);
+        return true;
+    } else if (e.type === "mouseup" || e.type === "touchend") {
+        panState.active = false;
+        return true;
+    }
+    return false;
+}
+
+const pushEvent = (e) => {
+    if (!handlePanEvent(e)) inputEventQueue.push(e);
+};
 
 function initCanvas() {
-    setCanvasSize(1024, 1024);
-
-    canvas.addEventListener("mousedown",  (e) => { inputEventQueue.push(e); });
-    canvas.addEventListener("touchstart", (e) => { e.preventDefault(); inputEventQueue.push(e); });
-
-    window.addEventListener("mouseup",  (e) => { inputEventQueue.push(e); });
-    window.addEventListener("touchend", (e) => { inputEventQueue.push(e); });
-
-    window.addEventListener("mousemove", (e) => { inputEventQueue.push(e); });
-    window.addEventListener("touchmove", (e) => { inputEventQueue.push(e); });
-
-    window.addEventListener("keydown", (e) => { inputEventQueue.push(e); });
-
-    window.addEventListener("dragstart", (e) => { e.preventDefault(); });
-
-    const zoomLevels = [0.125, 0.25, 0.5, 1, 2, 4, 8];
-    let zoomIndex = zoomLevels.indexOf(1);
-
-    container.addEventListener('wheel', (e) => {
-        if (e.ctrlKey) {
-            e.preventDefault();
-
-            if (e.deltaY < 0) {
-                zoomIndex = Math.min(zoomLevels.length - 1, zoomIndex + 1);
-            } else {
-                zoomIndex = Math.max(0, zoomIndex - 1);
-            }
-
-            const scale = zoomLevels[zoomIndex];
-
-            const newWidth  = canvas.width  * scale;
-            const newHeight = canvas.height * scale;
-
-            previewCanvas.style.width  = canvas.style.width  = newWidth  + "px";
-            previewCanvas.style.height = canvas.style.height = newHeight + "px";
-
-        }
-    }, { passive: false });
-
-    requestAnimationFrame(animationFrame)
-}
-
-function setCanvasSize(width, height) {
-    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return;
-    if (canvas.width == width && canvas.height == height) return;
-
-    previewCanvas.width = canvas.width = width;
-    previewCanvas.height = canvas.height = height;
-    previewCanvas.style.width = canvas.style.width = width + "px";
-    previewCanvas.style.height = canvas.style.height = height + "px";
-
+    previewCanvas.width = canvas.width = 1024;
+    previewCanvas.height = canvas.height = 1024;
     ctx.fillStyle = "white";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+
+    canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+
+    canvas.addEventListener("mousedown", pushEvent);
+    canvas.addEventListener(
+        "touchstart",
+        (e) => {
+            e.preventDefault();
+            pushEvent(e);
+        },
+        { passive: false },
+    );
+    window.addEventListener("mouseup", pushEvent);
+    window.addEventListener("touchend", pushEvent);
+    window.addEventListener("mousemove", pushEvent);
+    window.addEventListener("touchmove", pushEvent);
+    window.addEventListener("keydown", (e) => {
+        inputEventQueue.push(e);
+    });
+    window.addEventListener("dragstart", (e) => {
+        e.preventDefault();
+    });
+
+    container.addEventListener(
+        "wheel",
+        (e) => {
+            if (e.ctrlKey) {
+                e.preventDefault();
+                window.zoomCanvas(e.deltaY < 0 ? 1 : -1);
+            }
+        },
+        { passive: false },
+    );
+
+    requestAnimationFrame(animationFrame);
 }
 
-async function animationFrame(timestamp) {
-    for (const e of inputEventQueue) {
+function getFloodFillEventPayload(startX, startY, fillColor) {
+    const width = canvas.width;
+    const height = canvas.height;
+    if (startX < 0 || startX >= width || startY < 0 || startY >= height)
+        return null;
 
+    const imageData = ctx.getImageData(0, 0, width, height);
+    const data = imageData.data;
+    let hex = fillColor.replace("#", "");
+    if (hex.length === 3)
+        hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
+    const targetR = parseInt(hex.substring(0, 2), 16);
+    const targetG = parseInt(hex.substring(2, 4), 16);
+    const targetB = parseInt(hex.substring(4, 6), 16);
+    const startPos = (startY * width + startX) * 4;
+    const startR = data[startPos];
+    const startG = data[startPos + 1];
+    const startB = data[startPos + 2];
+
+    const tolerance = 80;
+    if (
+        Math.abs(targetR - startR) +
+            Math.abs(targetG - startG) +
+            Math.abs(targetB - startB) <=
+        tolerance
+    )
+        return null;
+
+    const tempCanvas = document.createElement("canvas");
+    tempCanvas.width = width;
+    tempCanvas.height = height;
+    const tempCtx = tempCanvas.getContext("2d");
+    const tempImageData = tempCtx.createImageData(width, height);
+    const tempData = tempImageData.data;
+
+    const queue = new Int32Array(width * height * 2);
+    let head = 0;
+    let tail = 0;
+    queue[tail++] = startX;
+    queue[tail++] = startY;
+    const visited = new Uint8Array(width * height);
+    visited[startY * width + startX] = 1;
+
+    let minX = startX,
+        maxX = startX,
+        minY = startY,
+        maxY = startY;
+    let filledPixels = 0;
+
+    while (head < tail) {
+        const cx = queue[head++];
+        const cy = queue[head++];
+        const idx = (cy * width + cx) * 4;
+        const vIdx = cy * width + cx;
+
+        if (
+            Math.abs(data[idx] - startR) +
+                Math.abs(data[idx + 1] - startG) +
+                Math.abs(data[idx + 2] - startB) <=
+            tolerance
+        ) {
+            tempData[idx] = targetR;
+            tempData[idx + 1] = targetG;
+            tempData[idx + 2] = targetB;
+            tempData[idx + 3] = 255;
+            if (cx < minX) minX = cx;
+            if (cx > maxX) maxX = cx;
+            if (cy < minY) minY = cy;
+            if (cy > maxY) maxY = cy;
+            filledPixels++;
+
+            if (cx > 0 && visited[vIdx - 1] === 0) {
+                queue[tail++] = cx - 1;
+                queue[tail++] = cy;
+                visited[vIdx - 1] = 1;
+            }
+            if (cx < width - 1 && visited[vIdx + 1] === 0) {
+                queue[tail++] = cx + 1;
+                queue[tail++] = cy;
+                visited[vIdx + 1] = 1;
+            }
+            if (cy > 0 && visited[vIdx - width] === 0) {
+                queue[tail++] = cx;
+                queue[tail++] = cy - 1;
+                visited[vIdx - width] = 1;
+            }
+            if (cy < height - 1 && visited[vIdx + width] === 0) {
+                queue[tail++] = cx;
+                queue[tail++] = cy + 1;
+                visited[vIdx + width] = 1;
+            }
+        }
+    }
+
+    if (filledPixels === 0) return null;
+    tempCtx.putImageData(tempImageData, 0, 0);
+
+    const cropWidth = maxX - minX + 1;
+    const cropHeight = maxY - minY + 1;
+    const cropCanvas = document.createElement("canvas");
+    cropCanvas.width = cropWidth;
+    cropCanvas.height = cropHeight;
+    cropCanvas
+        .getContext("2d")
+        .drawImage(
+            tempCanvas,
+            minX,
+            minY,
+            cropWidth,
+            cropHeight,
+            0,
+            0,
+            cropWidth,
+            cropHeight,
+        );
+
+    return { dataUrl: cropCanvas.toDataURL("image/png"), x: minX, y: minY };
+}
+
+async function animationFrame() {
+    for (const e of inputEventQueue) {
         switch (e.type) {
             case "mousedown":
-            case "touchstart":
-            {
-                painting = true;
-                strokePoints = [];
+            case "touchstart": {
+                if (!connection.connected) {
+                    showNewMessage(
+                        "**System**: Cannot draw while offline.",
+                        true,
+                    );
+                    break;
+                }
 
-                strokeLocalId = events.newLocalId();
+                strokeButton = e.button || 0;
+                const coords = getCanvasCoords(e);
+                if (!coords) break;
 
-                draw(e);
+                if (currentTool === "bucket") {
+                    const color =
+                        strokeButton === 2
+                            ? currentSecondaryColor
+                            : currentMainColor;
+                    const fillPayload = getFloodFillEventPayload(
+                        coords.x,
+                        coords.y,
+                        color,
+                    );
+                    if (fillPayload) {
+                        events.commitEvent({
+                            author: sessionClientId,
+                            local: events.newLocalId(),
+                            kind: "stamp",
+                            image: fillPayload.dataUrl,
+                            x: fillPayload.x,
+                            y: fillPayload.y,
+                        });
+                    }
+                } else if (["brush", "pen", "eraser"].includes(currentTool)) {
+                    painting = true;
+                    strokePoints = [];
+                    strokeLocalId = events.newLocalId();
+                    handleDrawingMove(e);
+                } else if (["rect", "ellipse", "line"].includes(currentTool)) {
+                    painting = true;
+                    strokePoints = [coords, coords];
+                    strokeLocalId = events.newLocalId();
+                } else if (currentTool === "lasso") {
+                    if (moveState === "idle") {
+                        moveState = "selecting";
+                        strokePoints = [coords];
+                    } else if (moveState === "selected") {
+                        if (isInsideSelection(coords, moveSelectionRect)) {
+                            moveState = "moving";
+                            moveStartPos = coords;
+                        } else {
+                            clearLassoSelection();
+                            moveState = "selecting";
+                            strokePoints = [coords];
+                        }
+                    }
+                }
                 break;
             }
             case "mouseup":
-            case "touchend":
-            {
+            case "touchend": {
                 if (painting) {
                     painting = false;
-                    events.commitBrushStroke(strokeLocalId, currentBrush(), strokePoints);
+                    if (["rect", "ellipse", "line"].includes(currentTool)) {
+                        events.commitEvent({
+                            author: sessionClientId,
+                            local: strokeLocalId,
+                            kind: "shape",
+                            shapeType: currentTool,
+                            brush: currentBrush(),
+                            points: strokePoints,
+                        });
+                    } else {
+                        events.commitEvent({
+                            author: sessionClientId,
+                            local: strokeLocalId,
+                            kind: "brush",
+                            brush: currentBrush(),
+                            points: strokePoints,
+                        });
+                    }
+                } else if (currentTool === "lasso") {
+                    if (moveState === "selecting") {
+                        moveState = "selected";
+                        let minX = Infinity,
+                            minY = Infinity,
+                            maxX = -Infinity,
+                            maxY = -Infinity;
+                        for (let p of strokePoints) {
+                            minX = Math.min(minX, p.x);
+                            minY = Math.min(minY, p.y);
+                            maxX = Math.max(maxX, p.x);
+                            maxY = Math.max(maxY, p.y);
+                        }
+                        moveSelectionRect = {
+                            x: minX,
+                            y: minY,
+                            w: maxX - minX,
+                            h: maxY - minY,
+                            dx: 0,
+                            dy: 0,
+                        };
+
+                        moveOffscreenCanvas = document.createElement("canvas");
+                        moveOffscreenCanvas.width = canvas.width;
+                        moveOffscreenCanvas.height = canvas.height;
+                        const mCtx = moveOffscreenCanvas.getContext("2d");
+                        mCtx.beginPath();
+                        mCtx.moveTo(strokePoints[0].x, strokePoints[0].y);
+                        for (let i = 1; i < strokePoints.length; i++)
+                            mCtx.lineTo(strokePoints[i].x, strokePoints[i].y);
+                        mCtx.closePath();
+                        mCtx.clip();
+                        mCtx.drawImage(canvas, 0, 0);
+                        events.brushStrokePreviewsDirty = true;
+                    } else if (moveState === "moving") {
+                        const maskCanvas = document.createElement("canvas");
+                        maskCanvas.width = canvas.width;
+                        maskCanvas.height = canvas.height;
+                        const mCtx = maskCanvas.getContext("2d");
+
+                        mCtx.beginPath();
+                        mCtx.moveTo(strokePoints[0].x, strokePoints[0].y);
+                        for (let i = 1; i < strokePoints.length; i++)
+                            mCtx.lineTo(strokePoints[i].x, strokePoints[i].y);
+                        mCtx.closePath();
+                        mCtx.clip();
+                        mCtx.drawImage(canvas, 0, 0);
+
+                        events.commitEvent({
+                            author: sessionClientId,
+                            local: events.newLocalId(),
+                            kind: "lasso_stamp",
+                            points: strokePoints,
+                            image: maskCanvas.toDataURL("image/png"),
+                            dx: moveSelectionRect.dx,
+                            dy: moveSelectionRect.dy,
+                        });
+                        clearLassoSelection();
+                    }
                 }
                 break;
             }
             case "mousemove":
-            case "touchmove":
-            {
-                draw(e);
+            case "touchmove": {
+                const coords = getCanvasCoords(e);
+                if (!coords) break;
+
+                if (painting) {
+                    if (["rect", "ellipse", "line"].includes(currentTool)) {
+                        strokePoints[1] = coords;
+                        events.brushStrokePreviewsDirty = true;
+                        connection.trySendBroadcast({
+                            kind: "shapePreview",
+                            connection: connection.id,
+                            author: sessionClientId,
+                            local: strokeLocalId,
+                            shapeType: currentTool,
+                            brush: currentBrush(),
+                            points: strokePoints,
+                        });
+                    } else handleDrawingMove(e);
+                } else if (currentTool === "lasso") {
+                    if (moveState === "selecting") {
+                        strokePoints.push(coords);
+                        events.brushStrokePreviewsDirty = true;
+                    } else if (moveState === "moving") {
+                        moveSelectionRect.dx = coords.x - moveStartPos.x;
+                        moveSelectionRect.dy = coords.y - moveStartPos.y;
+                        events.brushStrokePreviewsDirty = true;
+                    }
+                }
                 break;
             }
-            case "keydown":
-            {
-                if (!painting) {
-                    if (e.ctrlKey && e.code == "KeyZ") {
-                        if (e.shiftKey) events.redo();
-                        else events.undo();
-                    }
+            case "keydown": {
+                if (!painting && e.ctrlKey && e.code === "KeyZ") {
+                    if (e.shiftKey) events.redo();
+                    else events.undo();
                 }
                 break;
             }
         }
     }
     inputEventQueue.length = 0;
-
     await events.processPendingEvents();
-
     requestAnimationFrame(animationFrame);
 }
 
-function drawEvent(ctx, e) {
-    if (e.kind == "brush") {
-        drawBrushStroke(ctx, e.brush, e.points);
-    } else {
-        console.error("unknown event kind");
+function isInsideSelection(coords, rect) {
+    return (
+        rect &&
+        coords.x >= rect.x + rect.dx &&
+        coords.x <= rect.x + rect.w + rect.dx &&
+        coords.y >= rect.y + rect.dy &&
+        coords.y <= rect.y + rect.h + rect.dy
+    );
+}
+
+function getClientCoords(e) {
+    if (e.touches && e.touches.length > 0)
+        return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    else if (e.changedTouches && e.changedTouches.length > 0)
+        return {
+            x: e.changedTouches[0].clientX,
+            y: e.changedTouches[0].clientY,
+        };
+    else return { x: e.clientX, y: e.clientY };
+}
+
+function getCanvasCoords(e) {
+    const rect = canvas.getBoundingClientRect();
+    const client = getClientCoords(e);
+    if (!client) return null;
+    return {
+        x: Math.floor(((client.x - rect.left) * canvas.width) / rect.width),
+        y: Math.floor(((client.y - rect.top) * canvas.height) / rect.height),
+    };
+}
+
+function handleDrawingMove(e) {
+    const coords = getCanvasCoords(e);
+    if (!coords) return;
+    const { x, y } = coords;
+    if (
+        strokePoints.length > 0 &&
+        x == strokePoints[strokePoints.length - 1].x &&
+        y == strokePoints[strokePoints.length - 1].y
+    )
+        return;
+
+    let replaced = false;
+    if (strokePoints.length >= 2) {
+        const start = strokePoints[strokePoints.length - 2];
+        const prev = strokePoints[strokePoints.length - 1];
+        const ax = prev.x - start.x;
+        const ay = prev.y - start.y;
+        const bx = x - start.x;
+        const by = y - start.y;
+        if (ax * by == ay * bx) {
+            if (bx * ax + by * ay > ax * ax + ay * ay) {
+                replaced = true;
+                strokePoints[strokePoints.length - 1] = { x, y };
+            }
+        }
+    }
+    if (!replaced) strokePoints.push({ x: x, y: y });
+
+    events.brushStrokePreviewsDirty = true;
+    connection.trySendBroadcast({
+        kind: "brushPreview",
+        connection: connection.id,
+        author: sessionClientId,
+        local: strokeLocalId,
+        brush: currentBrush(),
+        points: strokePoints,
+    });
+}
+
+async function drawEvent(ctx, e) {
+    if (e.kind === "brush") drawBrushStroke(ctx, e.brush, e.points);
+    else if (e.kind === "shape") drawShape(ctx, e.shapeType, e.brush, e.points);
+    else if (e.kind === "stamp") {
+        const img = await loadImg(e.image);
+        ctx.drawImage(img, e.x, e.y);
+    } else if (e.kind === "lasso_stamp") {
+        if (!e.points || e.points.length === 0) return;
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(e.points[0].x, e.points[0].y);
+        for (let i = 1; i < e.points.length; i++)
+            ctx.lineTo(e.points[i].x, e.points[i].y);
+        ctx.closePath();
+        ctx.clip();
+        ctx.fillStyle = "white";
+        ctx.fill();
+        ctx.restore();
+        const img = await loadImg(e.image);
+        ctx.drawImage(img, e.dx, e.dy);
     }
 }
 
 function drawBrushStroke(ctx, brush, points) {
+    if (!points || points.length === 0) return;
+    ctx.lineWidth = brush.width;
+    ctx.strokeStyle = brush.color;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.imageSmoothingEnabled = brush.color !== "#ffffff";
+    ctx.beginPath();
+    ctx.moveTo(points[0].x + 0.5, points[0].y + 0.5);
+    for (const { x, y } of points) ctx.lineTo(x + 0.5, y + 0.5);
+    ctx.stroke();
+}
+
+function drawShape(ctx, shapeType, brush, points) {
+    if (!points || points.length < 2) return;
+    const start = points[0];
+    const end = points[1];
     ctx.lineWidth = brush.width;
     ctx.strokeStyle = brush.color;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     ctx.beginPath();
-    ctx.moveTo(points[0].x + 0.5, points[0].y + 0.5);
-    for (const { x, y } of points) {
-        ctx.lineTo(x + 0.5, y + 0.5);
+    if (shapeType === "rect") {
+        ctx.rect(start.x, start.y, end.x - start.x, end.y - start.y);
+    } else if (shapeType === "ellipse") {
+        const cx = (start.x + end.x) / 2;
+        const cy = (start.y + end.y) / 2;
+        ctx.ellipse(
+            cx,
+            cy,
+            Math.abs(end.x - start.x) / 2,
+            Math.abs(end.y - start.y) / 2,
+            0,
+            0,
+            2 * Math.PI,
+        );
+    } else if (shapeType === "line") {
+        ctx.moveTo(start.x, start.y);
+        ctx.lineTo(end.x, end.y);
     }
     ctx.stroke();
 }
 
 function initPallette() {
-    const colors = [
+    [
         "#000000",
         "#808080",
         "#800000",
@@ -573,120 +1104,58 @@ function initPallette() {
         "#8080ff",
         "#ff0080",
         "#ff8040",
-    ];
-
-    colors.forEach((color) => {
-        const colorBox = document.createElement("div");
-        colorBox.className = "palette-color";
-        colorBox.style.backgroundColor = color;
-        colorBox.onclick = () => selectColor(color);
-        palette.appendChild(colorBox);
+    ].forEach((color) => {
+        const cb = document.createElement("div");
+        cb.className = "palette-color";
+        cb.style.backgroundColor = color;
+        cb.onclick = () => {
+            currentMainColor = color;
+            mainColorDisplay.style.backgroundColor = color;
+        };
+        palette.appendChild(cb);
     });
 }
 
-// dummy chat
 function initChat() {
-    document
-        .getElementById("chatInput")
-        .addEventListener("keypress", function (e) {
-            if (e.key === "Enter") sendMessage();
-        });
-}
-
-function selectColor(color) {
-    currentMainColor = color;
-    mainColorDisplay.style.backgroundColor = color;
+    chatInput.addEventListener("keypress", (e) => {
+        if (e.key === "Enter") sendMessage();
+    });
 }
 
 function toggleMainColor() {
-    // App logic
     let temp = currentMainColor;
     currentMainColor = currentSecondaryColor;
     currentSecondaryColor = temp;
-
-    // DOM Elements
     mainColorDisplay.style.backgroundColor = currentMainColor;
     secondaryColorDisplay.style.backgroundColor = currentSecondaryColor;
 }
-
-function draw(e) {
-    if (!painting) return;
-    const rect = canvas.getBoundingClientRect();
-
-    function getClientCoords(e) {
-        if (e.touches && e.touches.length > 0) {
-            return {
-                x: e.touches[0].clientX,
-                y: e.touches[0].clientY
-            };
-        } else {
-            return {
-                x: e.clientX,
-                y: e.clientY
-            };
-        }
-    }
-
-    let { x, y } = getClientCoords(e);
-
-    x = Math.floor((x - rect.left) * canvas.width / rect.width);
-    y = Math.floor((y - rect.top) * canvas.height / rect.height);
-
-    // Same point
-    if (strokePoints.length > 1 && x == strokePoints[strokePoints.length - 1].x && y == strokePoints[strokePoints.length - 1].y) return;
-
-    // Replace old point if it was on the same line and behind the new one.
-    // Makes one pixel wide straight lines look much better.
-    var replaced = false
-    if (strokePoints.length >= 2) {
-        const start    = strokePoints[strokePoints.length - 2];
-        const previous = strokePoints[strokePoints.length - 1];
-
-        const ax = previous.x - start.x;
-        const ay = previous.y - start.y;
-
-        const bx = x - start.x;
-        const by = y - start.y;
-
-        // Point on the same line: ax / ay = bx / by
-        // Note: exact equality is okay since the coordinates are rounded to integers
-        if (ax * by == ay * bx) {
-            const dotBA = bx * ax + by * ay;
-            const dotAA = ax * ax + ay * ay;
-            // New point is further along the line
-            if (dotBA > dotAA) {
-                replaced = true;
-                strokePoints[strokePoints.length - 1] = { x, y };
-            }
-        }
-    }
-    if (!replaced) strokePoints.push({ x: x, y: y });
-
-
-    const brush = currentBrush();
-
-
-    events.brushStrokePreviewsDirty = true;
-    connection.trySendBroadcast({
-        kind: "brushPreview",
-        connection: connection.id,
-        local: strokeLocalId,
-        brush: brush,
-        points: strokePoints
-    });
-}
+window.toggleMainColor = toggleMainColor;
 
 function toggleChat() {
-    const body = document.getElementById("chatBody");
-    body.classList.toggle("open");
-}
+    const chatBody = document.getElementById("chatBody");
+    const chatHeader = document.getElementById("chatHeader");
+    chatBody.classList.toggle("open");
 
-function showNewMessage(text) {
+    chatHeader.classList.remove("unread");
+    chatHeader.querySelector(".indicator").textContent =
+        chatBody.classList.contains("open") ? "▼" : "▲";
+}
+window.toggleChat = toggleChat;
+
+function showNewMessage(text, important = false) {
     const msg = document.createElement("div");
     msg.classList.add("message");
+    if (important) msg.classList.add("important");
     msg.textContent = text;
     chatMessages.appendChild(msg);
     chatMessages.scrollTop = chatMessages.scrollHeight;
+
+    const chatBody = document.getElementById("chatBody");
+    const chatHeader = document.getElementById("chatHeader");
+
+    if (important && !chatBody.classList.contains("open")) toggleChat();
+    else if (!chatBody.classList.contains("open"))
+        chatHeader.classList.add("unread");
 }
 
 function sendMessage() {
@@ -695,7 +1164,6 @@ function sendMessage() {
         chatInput.value = "";
     }
 }
-window.toggleChat  = toggleChat;
 window.sendMessage = sendMessage;
 
 await initApp();
