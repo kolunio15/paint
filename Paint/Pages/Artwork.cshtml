@@ -1,12 +1,11 @@
-@page
+@page "{id:int}"
 @model ArtworkModel
 @{
-    ViewData["Title"] = Model.Art.Title;
+    ViewData["Title"] = Model.Artwork.Title;
 }
 
 <main class="artwork-page">
 
-    <!-- Pasek narzędziowy -->
     <div class="explorer-toolbar">
         <a asp-page="/Index" class="toolbar-btn">
             <div class="back-arrow"></div>
@@ -15,15 +14,14 @@
         <div class="toolbar-separator"></div>
         <span class="toolbar-address">
             <img src="~/icons/directory_open.ico" width="16" height="16" alt="" style="image-rendering:pixelated;object-fit:contain">
-            Gallery / @Model.Art.Title
+            Gallery / @Model.Artwork.Title
         </span>
     </div>
 
-    <!-- Okno z obrazkiem -->
     <div class="win-window">
         <div class="gallery-titlebar">
             <div class="titlebar-title" style="--titlebar-icon: url('/icons/paint_file.ico')">
-                @Model.Art.Title
+                @Model.Artwork.Title
             </div>
             <div class="gallery-titlebar-buttons">
                 <div class="titlebar-btn">_</div>
@@ -32,33 +30,39 @@
             </div>
         </div>
         <div class="artwork-body">
-            <img src="@Model.Art.ImageUrl" alt="@Model.Art.Title" class="artwork-img">
+            <img src="@Model.Artwork.ImageUrl" alt="@Model.Artwork.Title" class="artwork-img">
             <div class="artwork-info">
                 <div class="artwork-info-row">
                     <span class="artwork-label">Title:</span>
-                    <span>@Model.Art.Title</span>
+                    <span>@Model.Artwork.Title</span>
                 </div>
+                @if (Model.Artwork.Users.Count > 0)
+                {
+                    <div class="artwork-info-row">
+                        <span class="artwork-label">Author:</span>
+                        <span>@Model.Artwork.Users[0].Name</span>
+                    </div>
+                }
                 <div class="artwork-info-row">
                     <span class="artwork-label">Points:</span>
-                    <span class="artwork-points">@Model.Art.Points</span>
+                    <span class="artwork-points" id="artworkScore">@Model.Artwork.Score</span>
                 </div>
                 <div class="artwork-info-row">
                     <span class="artwork-label">Comments:</span>
-                    <span>@Model.Art.CommentCount</span>
+                    <span id="commentCount">@Model.Artwork.Comments.Count</span>
                 </div>
                 <div class="artwork-vote">
-                    <button>+ Vote Up</button>
-                    <button>- Vote Down</button>
+                    <button onclick="vote(1)">+ Vote Up</button>
+                    <button onclick="vote(-1)">- Vote Down</button>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Okno z komentarzami -->
     <div class="win-window">
         <div class="gallery-titlebar">
             <div class="titlebar-title" style="--titlebar-icon: url('/icons/accessibility.ico')">
-                Comments (@Model.Art.CommentCount)
+                Comments (<span id="commentCountTitle">@Model.Artwork.Comments.Count</span>)
             </div>
             <div class="gallery-titlebar-buttons">
                 <div class="titlebar-btn">_</div>
@@ -68,39 +72,106 @@
         </div>
         <div class="comments-body">
 
-            <!-- Lista komentarzy (mock) -->
-            <div class="comment">
-                <div class="comment-header">
-                    <img src="~/icons/address_book_user.ico" width="16" height="16" alt="" style="image-rendering:pixelated;object-fit:contain">
-                    <strong>user123</strong>
-                    <span class="comment-date">09/04/1999 21:37</span>
+            <div id="commentsList">
+            @foreach (var comment in Model.Artwork.Comments)
+            {
+                <div class="comment">
+                    <div class="comment-header">
+                        <img src="~/icons/address_book_user.ico" width="16" height="16" alt="" style="image-rendering:pixelated;object-fit:contain">
+                        <strong>@comment.User.Name</strong>
+                        <span class="comment-date">@comment.CreatedAt.ToLocalTime().ToString("MM/dd/yyyy HH:mm")</span>
+                    </div>
+                    <div class="comment-text">@comment.Content</div>
                 </div>
-                <div class="comment-text">Bardzo fajny rysunek!</div>
-            </div>
-            <div class="comment">
-                <div class="comment-header">
-                    <img src="~/icons/address_book_user.ico" width="16" height="16" alt="" style="image-rendering:pixelated;object-fit:contain">
-                    <strong>painter99</strong>
-                    <span class="comment-date">09/04/1999 21:45</span>
-                </div>
-                <div class="comment-text">Super robota :)</div>
+            }
+            @if (!Model.Artwork.Comments.Any())
+            {
+                <div style="padding: 12px; color: #808080; text-align: center;" id="noComments">No comments yet. Be the first!</div>
+            }
             </div>
 
-            <!-- Formularz nowego komentarza -->
             <div class="comment-form">
                 <div class="win-window-inset">
                     <label for="comment-input">Add comment:</label>
                     <textarea id="comment-input" rows="3" placeholder="Write your comment here..."></textarea>
                 </div>
-                <button class="comment-submit">Post Comment</button>
+                <button class="comment-submit" onclick="submitComment()">Post Comment</button>
             </div>
         </div>
 
-        <!-- Pasek statusu -->
         <div class="gallery-statusbar">
-            <span>@Model.Art.CommentCount comment(s)</span>
+            <span id="statusCommentCount">@Model.Artwork.Comments.Count comment(s)</span>
             <span>Ready</span>
         </div>
     </div>
 
 </main>
+
+<script>
+const artworkId = @Model.Artwork.Id;
+
+async function vote(value) {
+    const res = await fetch(`/api/artworks/${artworkId}/vote`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vote: value })
+    });
+    if (res.status === 204) {
+        const detailRes = await fetch(`/api/artworks/${artworkId}`);
+        if (detailRes.ok) {
+            const data = await detailRes.json();
+            const scoreEl = document.getElementById('artworkScore');
+            if (scoreEl) scoreEl.textContent = data.score;
+        }
+    } else if (res.status === 401) {
+        window.location.href = '/Auth/Login?returnUrl=' + encodeURIComponent(window.location.pathname + window.location.search);
+    }
+}
+
+async function submitComment() {
+    const textarea = document.getElementById('comment-input');
+    const message = textarea.value.trim();
+    if (!message) return;
+
+    const res = await fetch(`/api/artworks/${artworkId}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message })
+    });
+    if (res.status === 201) {
+        const comment = await res.json();
+        textarea.value = '';
+
+        const noComments = document.getElementById('noComments');
+        if (noComments) noComments.remove();
+
+        const list = document.getElementById('commentsList');
+        const div = document.createElement('div');
+        div.className = 'comment';
+        const date = new Date(comment.createdAt);
+        const dateStr = date.toLocaleDateString('en-US') + ' ' + date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+        div.innerHTML = `
+            <div class="comment-header">
+                <img src="/icons/address_book_user.ico" width="16" height="16" style="image-rendering:pixelated;object-fit:contain">
+                <strong>${comment.user.name}</strong>
+                <span class="comment-date">${dateStr}</span>
+            </div>
+            <div class="comment-text">${escapeHtml(comment.content)}</div>`;
+        list.appendChild(div);
+
+        const count = list.querySelectorAll('.comment').length;
+        ['commentCount', 'commentCountTitle'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = count;
+        });
+        const status = document.getElementById('statusCommentCount');
+        if (status) status.textContent = count + ' comment(s)';
+    } else if (res.status === 401) {
+        window.location.href = '/Auth/Login?returnUrl=' + encodeURIComponent(window.location.pathname + window.location.search);
+    }
+}
+
+function escapeHtml(str) {
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>

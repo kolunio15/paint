@@ -10,26 +10,26 @@
 
 <div class="paint-app">
     <div class="menu-bar">
-        <div class="menu-item">File</div>
-        <div class="menu-item">Edit</div>
-        <div class="menu-item">View</div>
-        <div class="menu-item">Image</div>
-        <div class="menu-item">Colors</div>
-        <div class="menu-item">Help</div>
+        <div class="menu-item" id="menuFile"   onclick="openMenu('file')">File</div>
+        <div class="menu-item" id="menuEdit"   onclick="openMenu('edit')">Edit</div>
+        <div class="menu-item" id="menuView"   onclick="openMenu('view')">View</div>
+        <div class="menu-item" id="menuImage"  onclick="openMenu('image')">Image</div>
+        <div class="menu-item" id="menuColors" onclick="openMenu('colors')">Colors</div>
+        <div class="menu-item" id="menuHelp"   onclick="openMenu('help')">Help</div>
     </div>
 
     <div class="main-content">
         <div class="toolbox">
-            <div class="tool" id="pen">✏️</div>
-            <div class="tool active" id="brush">🖌️</div>
-            <div class="tool" id="eraser">🧽</div>
-            <div class="tool" id="bucket">🪣</div>
-            <div class="tool"></div>
-            <div class="tool"></div>
-            <div class="tool"></div>
-            <div class="tool"></div>
-            <div class="tool"></div>
-            <div class="tool"></div>
+            <div class="tool" id="eraser"     title="Eraser">         <img src="/icons/eraser.ico"       ></div>
+            <div class="tool" id="bucket"     title="Fill Bucket">    <img src="/icons/bucket.ico"       ></div>
+            <div class="tool" id="eyedropper" title="Color Picker">   <img src="/icons/color_picker.ico" ></div>
+            <div class="tool" id="magnifier"  title="Move / Pan">     <img src="/icons/zoom.ico"         ></div>
+            <div class="tool" id="pen"        title="Pencil">         <img src="/icons/pen.ico"          ></div>
+            <div class="tool active" id="brush" title="Brush">        <img src="/icons/brush.ico"        ></div>
+            <div class="tool" id="airbrush"   title="Airbrush">       <img src="/icons/spray.ico"        ></div>
+            <div class="tool" id="line"       title="Line">           <img src="/icons/line.ico"         ></div>
+            <div class="tool" id="rect"       title="Rectangle">      <img src="/icons/rect2.ico"        ></div>
+            <div class="tool" id="ellipse"    title="Ellipse">        <img src="/icons/elipse.ico"       ></div>
             <div class="tool-options">
                 <input type="range" id="size" min="1" max="20" value="2" />
             </div>
@@ -49,8 +49,15 @@
         <div class="palette" id="palette"></div>
     </div>
 
-    <div class="status-bar">Also try Gimp!</div>
+    <div class="status-bar" id="statusBar">Ready</div>
 </div>
+
+<div id="dropdown-file"   class="win-dropdown" style="display:none"></div>
+<div id="dropdown-edit"   class="win-dropdown" style="display:none"></div>
+<div id="dropdown-view"   class="win-dropdown" style="display:none"></div>
+<div id="dropdown-image"  class="win-dropdown" style="display:none"></div>
+<div id="dropdown-colors" class="win-dropdown" style="display:none"></div>
+<div id="dropdown-help"   class="win-dropdown" style="display:none"></div>
 
 <div class="chat-container">
     <div class="chat-header" onclick="toggleChat()">
@@ -59,7 +66,7 @@
     </div>
     <div class="chat-body" id="chatBody">
         <div class="chat-messages" id="chatMessages">
-            <div class="message">**System**: Room pokoj1 created!</div>
+            <div class="message">**System**: Connected to room.</div>
         </div>
         <div class="chat-input-area">
             <input type="text" id="chatInput" placeholder="Write something..." />
@@ -67,4 +74,421 @@
         </div>
     </div>
 </div>
+
+<div id="publishOverlay" class="win-overlay" style="display:none">
+    <div class="win-window" style="width:400px;box-shadow:4px 4px 0 #000">
+        <div class="gallery-titlebar">
+            <div class="titlebar-title" style="--titlebar-icon:url('/icons/paint_file.ico')">Publish to Gallery</div>
+            <div class="gallery-titlebar-buttons"><div class="titlebar-btn" onclick="hideOverlay('publishOverlay')">✕</div></div>
+        </div>
+        <div style="padding:16px;background:#ece9d8">
+            <div id="publishError"   class="msg-error"   style="display:none"></div>
+            <div id="publishSuccess" class="msg-success" style="display:none"></div>
+            <img id="publishPreview" class="publish-preview" alt="Preview">
+            <div class="form-grid" style="margin-top:8px">
+                <label>Title:</label>
+                <input id="artworkTitle" type="text" class="win-window-inset" style="padding:2px 4px;font-size:12px;font-family:inherit;width:100%" maxlength="120" placeholder="Give your artwork a name...">
+            </div>
+            <div class="btn-row">
+                <button class="comment-submit" id="publishBtn" onclick="publishArtwork()">Publish</button>
+                <button class="toolbar-btn" style="justify-content:center;min-width:64px" onclick="hideOverlay('publishOverlay')">Cancel</button>
+            </div>
+        </div>
+    </div>
 </div>
+
+<div id="shortcutsOverlay" class="win-overlay" style="display:none">
+    <div class="win-window" style="width:360px;box-shadow:4px 4px 0 #000">
+        <div class="gallery-titlebar">
+            <div class="titlebar-title" style="--titlebar-icon:url('/icons/accessibility.ico')">Keyboard Shortcuts</div>
+            <div class="gallery-titlebar-buttons"><div class="titlebar-btn" onclick="hideOverlay('shortcutsOverlay')">✕</div></div>
+        </div>
+        <div style="padding:16px;background:#ece9d8">
+            <table style="width:100%;border-collapse:collapse;font-size:12px">
+                <tr style="background:#c0c0c0"><th style="padding:3px 8px;text-align:left">Shortcut</th><th style="padding:3px 8px;text-align:left">Action</th></tr>
+                <tr><td style="padding:3px 8px"><kbd>Ctrl+Z</kbd></td><td style="padding:3px 8px">Undo</td></tr>
+                <tr style="background:#ececec"><td style="padding:3px 8px"><kbd>Ctrl+Shift+Z</kbd></td><td style="padding:3px 8px">Redo</td></tr>
+                <tr><td style="padding:3px 8px"><kbd>Ctrl+Scroll</kbd></td><td style="padding:3px 8px">Zoom in/out</td></tr>
+                <tr style="background:#ececec"><td style="padding:3px 8px"><kbd>Click color box</kbd></td><td style="padding:3px 8px">Swap main/secondary color</td></tr>
+            </table>
+            <div style="display:flex;justify-content:flex-end;margin-top:12px">
+                <button class="comment-submit" onclick="hideOverlay('shortcutsOverlay')">OK</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<input type="color" id="customColorPicker" style="display:none" onchange="applyCustomColor(this.value)">
+
+<style>
+.win-dropdown {
+    position: fixed;
+    z-index: 500;
+    background: #c0c0c0;
+    border-top: 1px solid #fff;
+    border-left: 1px solid #fff;
+    border-bottom: 1px solid #404040;
+    border-right: 1px solid #404040;
+    box-shadow: 1px 1px 0 #000;
+    min-width: 180px;
+    padding: 2px 0;
+}
+.dd-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 3px 24px 3px 8px;
+    font-size: 13px;
+    cursor: default;
+    white-space: nowrap;
+    user-select: none;
+}
+.dd-item:hover { background: #000080; color: #fff; }
+.dd-item:hover img { filter: invert(1); }
+.dd-item.disabled { color: #808080; pointer-events: none; }
+.dd-sep {
+    border-top: 1px solid #808080;
+    border-bottom: 1px solid #fff;
+    margin: 2px 4px;
+}
+.dd-item .shortcut { margin-left: auto; color: #808080; font-size: 11px; }
+.dd-item:hover .shortcut { color: #ddd; }
+.win-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.3);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.publish-preview {
+    width: 100%; max-height: 200px; object-fit: contain;
+    border-top: 2px solid #808080; border-left: 2px solid #808080;
+    border-bottom: 2px solid #fff; border-right: 2px solid #fff;
+    background: #fff; display: block;
+}
+.msg-error {
+    color: #8b0000; padding: 4px; border: 1px solid #8b0000;
+    background: #fff0f0; margin-bottom: 8px;
+}
+.msg-success {
+    color: #006400; padding: 4px; border: 1px solid #006400;
+    background: #f0fff0; margin-bottom: 8px;
+}
+.form-grid {
+    display: grid;
+    grid-template-columns: 80px 1fr;
+    gap: 8px;
+    align-items: center;
+    font-size: 12px;
+}
+.btn-row {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-top: 12px;
+}
+kbd {
+    background: #c0c0c0;
+    border-top: 1px solid #fff;
+    border-left: 1px solid #fff;
+    border-bottom: 1px solid #404040;
+    border-right: 1px solid #404040;
+    padding: 1px 4px;
+    font-family: inherit;
+}
+</style>
+
+<script>
+const isLoggedIn = @(User.Identity?.IsAuthenticated == true ? "true" : "false");
+
+/* ========== MENU SYSTEM ========== */
+const MENUS = {
+    file: {
+        anchor: 'menuFile',
+        items: [
+            { icon: '/icons/paint_file.ico',     label: 'New',                  action: menuNew },
+            { sep: true },
+            { icon: '/icons/directory_open.ico', label: 'Save to Computer...', action: menuSave },
+            { icon: '/icons/paint_file.ico',     label: 'Publish to Gallery...', action: menuPublish },
+        ]
+    },
+    edit: {
+        anchor: 'menuEdit',
+        items: [
+            { label: 'Undo', shortcut: 'Ctrl+Z',       action: menuUndo },
+            { label: 'Redo', shortcut: 'Ctrl+Shift+Z', action: menuRedo },
+        ]
+    },
+    view: {
+        anchor: 'menuView',
+        items: [
+            { label: 'Zoom In',          shortcut: 'Ctrl+↑scroll', action: menuZoomIn },
+            { label: 'Zoom Out',         shortcut: 'Ctrl+↓scroll', action: menuZoomOut },
+            { label: 'Reset Zoom (100%)',                           action: menuZoomReset },
+        ]
+    },
+    image: {
+        anchor: 'menuImage',
+        items: [
+            { label: 'Flip Horizontal', action: imageFlipH },
+            { label: 'Flip Vertical',   action: imageFlipV },
+            { sep: true },
+            { label: 'Invert Colors',   action: imageInvert },
+        ]
+    },
+    colors: {
+        anchor: 'menuColors',
+        items: [
+            { label: 'Custom Color...', action: menuCustomColor },
+        ]
+    },
+    help: {
+        anchor: 'menuHelp',
+        items: [
+            { label: 'Keyboard Shortcuts', action: () => { closeMenus(); showOverlay('shortcutsOverlay'); } },
+        ]
+    }
+};
+
+let activeMenu = null;
+
+function openMenu(name) {
+    if (activeMenu === name) { closeMenus(); return; }
+    closeMenus();
+    activeMenu = name;
+
+    const cfg = MENUS[name];
+    const anchor = document.getElementById(cfg.anchor);
+    const rect = anchor.getBoundingClientRect();
+    const dd = document.getElementById('dropdown-' + name);
+
+    dd.innerHTML = '';
+    for (const item of cfg.items) {
+        if (item.sep) {
+            const sep = document.createElement('div');
+            sep.className = 'dd-sep';
+            dd.appendChild(sep);
+        } else {
+            const locked = item.authOnly && !isLoggedIn;
+            const el = document.createElement('div');
+            el.className = 'dd-item' + (locked ? ' disabled' : '');
+            if (item.icon) {
+                const img = document.createElement('img');
+                img.src = item.icon; img.width = 16; img.height = 16;
+                img.style.imageRendering = 'pixelated';
+                img.onerror = () => img.style.display = 'none';
+                el.appendChild(img);
+            }
+            const span = document.createElement('span');
+            span.textContent = item.label;
+            el.appendChild(span);
+            if (locked) {
+                const lock = document.createElement('span');
+                lock.className = 'shortcut';
+                lock.textContent = '🔒';
+                el.appendChild(lock);
+            } else if (item.shortcut) {
+                const s = document.createElement('span');
+                s.className = 'shortcut';
+                s.textContent = item.shortcut;
+                el.appendChild(s);
+            }
+            if (!locked) el.onclick = (e) => { e.stopPropagation(); closeMenus(); item.action(); };
+            dd.appendChild(el);
+        }
+    }
+
+    dd.style.left = rect.left + 'px';
+    dd.style.top  = rect.bottom + 'px';
+    dd.style.display = 'block';
+}
+
+function closeMenus() {
+    activeMenu = null;
+    Object.keys(MENUS).forEach(name => {
+        document.getElementById('dropdown-' + name).style.display = 'none';
+    });
+}
+
+document.addEventListener('click', (e) => {
+    const inMenu = e.target.closest('.menu-item') || e.target.closest('.win-dropdown');
+    if (!inMenu) closeMenus();
+});
+
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeMenus();
+});
+
+/* ========== FILE MENU ACTIONS ========== */
+function menuNew() {
+    const c = document.getElementById('paintCanvas');
+    c.getContext('2d').fillStyle = '#ffffff';
+    c.getContext('2d').fillRect(0, 0, c.width, c.height);
+    setStatus('Canvas cleared.');
+}
+
+function menuSave() {
+    const c = document.getElementById('paintCanvas');
+    const tmp = document.createElement('canvas');
+    tmp.width = c.width; tmp.height = c.height;
+    const t = tmp.getContext('2d');
+
+    // flips
+    t.save();
+    if (flipH || flipV) {
+        t.translate(flipH ? c.width : 0, flipV ? c.height : 0);
+        t.scale(flipH ? -1 : 1, flipV ? -1 : 1);
+    }
+    t.drawImage(c, 0, 0);
+    t.restore();
+
+    // invert
+    if (inverted) {
+        const img = t.getImageData(0, 0, tmp.width, tmp.height);
+        for (let i = 0; i < img.data.length; i += 4) {
+            img.data[i]   = 255 - img.data[i];
+            img.data[i+1] = 255 - img.data[i+1];
+            img.data[i+2] = 255 - img.data[i+2];
+        }
+        t.putImageData(img, 0, 0);
+    }
+
+    const a = document.createElement('a');
+    a.download = 'painting.png';
+    a.href = tmp.toDataURL('image/png');
+    a.click();
+    setStatus('Image saved.');
+}
+
+function menuPublish() {
+    const c = document.getElementById('paintCanvas');
+    document.getElementById('publishPreview').src = c.toDataURL('image/png');
+    document.getElementById('publishError').style.display   = 'none';
+    document.getElementById('publishSuccess').style.display = 'none';
+    document.getElementById('artworkTitle').value = '';
+    document.getElementById('publishBtn').disabled = false;
+    document.getElementById('publishBtn').textContent = 'Publish';
+    showOverlay('publishOverlay');
+    setTimeout(() => document.getElementById('artworkTitle').focus(), 50);
+}
+
+async function publishArtwork() {
+    const roomId = new URLSearchParams(window.location.search).get('roomId');
+    const title  = document.getElementById('artworkTitle').value.trim();
+    const errorEl   = document.getElementById('publishError');
+    const successEl = document.getElementById('publishSuccess');
+    errorEl.style.display = successEl.style.display = 'none';
+
+    if (!title) {
+        errorEl.textContent = 'Please enter a title.';
+        errorEl.style.display = 'block';
+        return;
+    }
+
+    const btn = document.getElementById('publishBtn');
+    btn.disabled = true; btn.textContent = 'Publishing...';
+
+    const imageBase64 = document.getElementById('paintCanvas').toDataURL('image/png');
+    const res = await fetch(`/api/rooms/${roomId}/publish`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, imageBase64 })
+    });
+
+    btn.disabled = false; btn.textContent = 'Publish';
+
+    if (res.status === 201) {
+        const id = await res.json();
+        successEl.textContent = 'Published! Redirecting...';
+        successEl.style.display = 'block';
+        setTimeout(() => window.location.href = `/Artwork/${id}`, 1200);
+    } else if (res.status === 401) {
+        window.location.href = '/Auth/Login';
+    } else {
+        let msg = 'Failed to publish. Make sure you are logged in.';
+        try { const b = await res.json(); if (b.errors) msg = Object.values(b.errors).flat().join(' '); } catch {}
+        errorEl.textContent = msg; errorEl.style.display = 'block';
+    }
+}
+
+/* ========== EDIT MENU ACTIONS ========== */
+function menuUndo() {
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', code: 'KeyZ', ctrlKey: true, bubbles: true }));
+    setStatus('Undo.');
+}
+function menuRedo() {
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', code: 'KeyZ', ctrlKey: true, shiftKey: true, bubbles: true }));
+    setStatus('Redo.');
+}
+
+/* ========== VIEW MENU ACTIONS ========== */
+function menuZoomIn() {
+    const cc = document.getElementById('canvasContainer');
+    cc.dispatchEvent(new WheelEvent('wheel', { deltaY: -1, ctrlKey: true, bubbles: true, cancelable: true }));
+    updateZoomStatus();
+}
+function menuZoomOut() {
+    const cc = document.getElementById('canvasContainer');
+    cc.dispatchEvent(new WheelEvent('wheel', { deltaY: 1, ctrlKey: true, bubbles: true, cancelable: true }));
+    updateZoomStatus();
+}
+function menuZoomReset() {
+    if (window.canvasZoomReset) window.canvasZoomReset();
+    setStatus('Zoom: 100%');
+}
+function updateZoomStatus() {
+    const pct = window.getCanvasZoom ? Math.round(window.getCanvasZoom() * 100) : '?';
+    setStatus('Zoom: ' + pct + '%');
+}
+
+/* ========== IMAGE MENU ACTIONS ========== */
+let flipH = false, flipV = false, inverted = false;
+
+function imageFlipH() {
+    flipH = !flipH;
+    if (window.setLocalFlip) window.setLocalFlip(flipH, flipV);
+    setStatus('Flip horizontal: ' + (flipH ? 'ON' : 'off'));
+}
+function imageFlipV() {
+    flipV = !flipV;
+    if (window.setLocalFlip) window.setLocalFlip(flipH, flipV);
+    setStatus('Flip vertical: ' + (flipV ? 'ON' : 'off'));
+}
+function imageInvert() {
+    inverted = !inverted;
+    const c  = document.getElementById('paintCanvas');
+    const pc = document.getElementById('previewCanvas');
+    const f  = inverted ? 'invert(1)' : '';
+    c.style.filter = pc.style.filter = f;
+    setStatus('Invert: ' + (inverted ? 'ON' : 'off'));
+}
+
+/* ========== COLORS MENU ACTIONS ========== */
+function menuCustomColor() {
+    document.getElementById('customColorPicker').click();
+}
+function applyCustomColor(color) {
+    if (window.selectColor) window.selectColor(color);
+    else {
+        document.getElementById('mainColorDisplay').style.backgroundColor = color;
+    }
+    setStatus('Color set to ' + color);
+}
+
+/* ========== HELPERS ========== */
+function showOverlay(id) {
+    document.getElementById(id).style.display = 'flex';
+}
+function hideOverlay(id) {
+    document.getElementById(id).style.display = 'none';
+}
+function setStatus(msg) {
+    const el = document.getElementById('statusBar');
+    if (el) el.textContent = msg;
+}
+
+document.querySelectorAll('.win-overlay').forEach(el => {
+    el.addEventListener('click', (e) => { if (e.target === el) el.style.display = 'none'; });
+});
+</script>

@@ -37,13 +37,18 @@ public class EfArtworkRepository : IArtworkRepository
         }
 
         var artworks = await query
+            .Include(a => a.Votes)
             .OrderByDescending(artwork => artwork.CreatedAt)
             .ThenByDescending(artwork => artwork.Id)
             .Take(safeCount)
             .ToListAsync(cancellationToken);
 
         return artworks
-            .Select(artwork => new ArtworkSummaryDto(artwork.Id, artwork.Title, artwork.ImageUrl))
+            .Select(artwork => new ArtworkSummaryDto(
+                artwork.Id,
+                artwork.Title,
+                artwork.ImageUrl,
+                artwork.Votes.Sum(v => v.Value)))
             .ToList();
     }
 

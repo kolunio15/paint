@@ -59,6 +59,32 @@ nav a:active {
     border-right: 1px solid #ffffff;
 }
 
+nav .nav-btn {
+    color: #000000;
+    text-decoration: none;
+    display: inline-block;
+    padding: 4px 10px;
+    border-top: 1px solid #ffffff;
+    border-left: 1px solid #ffffff;
+    border-bottom: 1px solid #404040;
+    border-right: 1px solid #404040;
+    background: #c0c0c0;
+    font: inherit;
+    cursor: pointer;
+}
+
+nav .nav-btn:hover {
+    background: #000080;
+    color: #ffffff;
+}
+
+nav .nav-btn:active {
+    border-top: 1px solid #404040;
+    border-left: 1px solid #404040;
+    border-bottom: 1px solid #ffffff;
+    border-right: 1px solid #ffffff;
+}
+
 /* Główna zawartość */
 main {
     margin: 10px;

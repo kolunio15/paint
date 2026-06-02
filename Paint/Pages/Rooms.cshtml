@@ -6,7 +6,7 @@
 
 <main class="rooms-page">
     <div class="win-window" style="max-width: 800px; margin: 0 auto;">
-        
+
         <div class="gallery-titlebar">
             <div class="titlebar-title" style="--titlebar-icon: url('/icons/directory_open.ico')">
                 Exploring - Paint Rooms
@@ -23,7 +23,7 @@
 
             <div class="win-window-inset" style="height: 300px; overflow-y: auto; padding: 0;">
                 <table style="width: 100%; border-collapse: collapse;">
-                    <thead style="background: #c0c0c0; border-bottom: 1px solid #808080;">
+                    <thead style="background: #c0c0c0; border-bottom: 1px solid #808080; position: sticky; top: 0;">
                         <tr>
                             <th style="text-align: left; padding: 4px; border-right: 1px solid #808080; font-weight: normal;">Room Name</th>
                             <th style="text-align: right; padding: 4px; border-right: 1px solid #808080; font-weight: normal; width: 80px;">Users</th>
@@ -34,30 +34,37 @@
                     <tbody>
                         @foreach (var room in Model.ActiveRooms)
                         {
-                            <tr style="border-bottom: 1px solid #dfdfdf;">
+                            <tr id="room-row-@room.Id" style="border-bottom: 1px solid #dfdfdf;">
                                 <td style="padding: 4px; display: flex; align-items: center; gap: 5px;">
                                     <img src="~/icons/paint_file.ico" width="16" height="16" alt="" style="image-rendering:pixelated;" onerror="this.style.display='none'">
                                     @room.Name
                                 </td>
                                 <td style="text-align: right; padding: 4px;">@room.UserCount / @room.MaxUsers</td>
-								<td style="text-align: center; padding: 4px;">
-                                   @if (room.IsProtected)
-									{
-										<img src="~/icons/msagent.ico" width="16" height="16" alt="Private" title="Private Room" style="image-rendering: pixelated; vertical-align: middle;">
-									}
-									else
-									{
-										<span style="vertical-align: middle;">Public</span>
-									}
+                                <td style="text-align: center; padding: 4px;">
+                                    @if (room.IsProtected)
+                                    {
+                                        <img src="~/icons/key_padlock.ico" width="16" height="16" alt="Private" title="Password protected" style="image-rendering: pixelated; vertical-align: middle;">
+                                    }
+                                    else
+                                    {
+                                        <span style="vertical-align: middle;">Public</span>
+                                    }
                                 </td>
-                                <td style="text-align: center; padding: 2px;">
+                                <td style="text-align: center; padding: 2px; display: flex; gap: 2px; justify-content: center;">
                                     <a asp-page="/Canvas" asp-route-roomId="@room.Id" class="toolbar-btn" style="justify-content: center;">
                                         Join
                                     </a>
+                                    @if (User.Identity?.IsAuthenticated == true)
+                                    {
+                                        <button class="toolbar-btn" style="justify-content:center;color:#8b0000;border-color:#8b0000"
+                                                onclick="confirmDeleteRoom(@room.Id, '@Html.Raw(room.Name.Replace("'", "\\'"))')">
+                                            Del
+                                        </button>
+                                    }
                                 </td>
                             </tr>
                         }
-                        @if(!Model.ActiveRooms.Any())
+                        @if (!Model.ActiveRooms.Any())
                         {
                             <tr>
                                 <td colspan="4" style="text-align: center; padding: 20px; color: #808080;">No active rooms found.</td>
@@ -66,9 +73,9 @@
                     </tbody>
                 </table>
             </div>
-            
+
             <div style="margin-top: 10px; display: flex; justify-content: flex-end;">
-                <button class="comment-submit">Create New Room</button>
+                <button class="comment-submit" onclick="showCreateRoomDialog()">Create New Room</button>
             </div>
         </div>
 
@@ -78,3 +85,179 @@
         </div>
     </div>
 </main>
+
+<div id="deleteRoomOverlay" style="display:none; position:fixed; inset:0; background: rgba(0,0,0,0.3); z-index:1000; align-items:center; justify-content:center;">
+    <div class="win-window" style="width: 360px; box-shadow: 4px 4px 0 #000;">
+        <div class="gallery-titlebar">
+            <div class="titlebar-title" style="--titlebar-icon: url('/icons/msg_warning.ico')">
+                Delete Room
+            </div>
+            <div class="gallery-titlebar-buttons">
+                <div class="titlebar-btn" onclick="hideDeleteRoomDialog()">✕</div>
+            </div>
+        </div>
+        <div style="padding: 16px; background: #ece9d8; display: flex; gap: 12px; align-items: flex-start;">
+            <img src="~/icons/msg_warning.ico" width="32" height="32" alt="" style="image-rendering:pixelated; flex-shrink:0;" onerror="this.style.display='none'">
+            <div style="font-size: 12px;">
+                <p style="margin: 0 0 6px 0; font-weight: bold;">Are you sure you want to delete this room?</p>
+                <p style="margin: 0; color: #444;">Room: <strong id="deleteRoomName"></strong></p>
+                <p style="margin: 4px 0 0 0; color: #666; font-size: 11px;">All drawing history will be lost.</p>
+                <div id="deleteRoomError" style="color: #8b0000; margin-top: 8px; display: none;"></div>
+            </div>
+        </div>
+        <div style="padding: 8px 16px 12px; background: #ece9d8; display: flex; justify-content: flex-end; gap: 6px; border-top: 1px solid #808080;">
+            <button class="comment-submit" style="color:#8b0000" onclick="deleteRoom()">Delete</button>
+            <button class="toolbar-btn" style="justify-content: center; min-width: 64px;" onclick="hideDeleteRoomDialog()">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<div id="createRoomOverlay" style="display:none; position:fixed; inset:0; background: rgba(0,0,0,0.3); z-index:1000; align-items:center; justify-content:center;">
+    <div class="win-window" style="width: 380px; box-shadow: 4px 4px 0 #000;">
+        <div class="gallery-titlebar">
+            <div class="titlebar-title" style="--titlebar-icon: url('/icons/paint_file.ico')">
+                Create New Room
+            </div>
+            <div class="gallery-titlebar-buttons">
+                <div class="titlebar-btn" onclick="hideCreateRoomDialog()">✕</div>
+            </div>
+        </div>
+        <div style="padding: 16px; background: #ece9d8;">
+            <div id="createRoomError" style="color: #8b0000; display: none; margin-bottom: 8px; padding: 4px; border: 1px solid #8b0000; background: #fff0f0;"></div>
+            <div style="display: grid; grid-template-columns: 130px 1fr; gap: 8px; align-items: center; font-size: 12px;">
+                <label for="roomName">Room Name:</label>
+                <input id="roomName" type="text" class="win-window-inset"
+                       style="padding: 2px 4px; font-size: 12px; font-family: inherit; width: 100%;"
+                       maxlength="100" placeholder="3–100 characters" />
+
+                <label for="maxUsers">Max Users:</label>
+                <input id="maxUsers" type="number" class="win-window-inset"
+                       style="padding: 2px 4px; font-size: 12px; font-family: inherit; width: 100%;"
+                       min="1" max="100" value="10" />
+
+                <label for="canvasWidth">Canvas Width:</label>
+                <input id="canvasWidth" type="number" class="win-window-inset"
+                       style="padding: 2px 4px; font-size: 12px; font-family: inherit; width: 100%;"
+                       min="64" max="8192" value="1024" />
+
+                <label for="canvasHeight">Canvas Height:</label>
+                <input id="canvasHeight" type="number" class="win-window-inset"
+                       style="padding: 2px 4px; font-size: 12px; font-family: inherit; width: 100%;"
+                       min="64" max="8192" value="1024" />
+
+                <label for="roomPassword">Password (optional):</label>
+                <input id="roomPassword" type="password" class="win-window-inset"
+                       style="padding: 2px 4px; font-size: 12px; font-family: inherit; width: 100%;"
+                       maxlength="100" placeholder="Leave blank for public" />
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 6px; margin-top: 12px;">
+                <button class="comment-submit" onclick="createRoom()">Create</button>
+                <button class="toolbar-btn" style="justify-content: center; min-width: 64px;" onclick="hideCreateRoomDialog()">Cancel</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function showCreateRoomDialog() {
+    document.getElementById('createRoomError').style.display = 'none';
+    document.getElementById('roomName').value = '';
+    document.getElementById('roomPassword').value = '';
+    const el = document.getElementById('createRoomOverlay');
+    el.style.display = 'flex';
+    setTimeout(() => document.getElementById('roomName').focus(), 50);
+}
+
+function hideCreateRoomDialog() {
+    document.getElementById('createRoomOverlay').style.display = 'none';
+}
+
+document.getElementById('createRoomOverlay').addEventListener('click', function (e) {
+    if (e.target === this) hideCreateRoomDialog();
+});
+
+document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') hideCreateRoomDialog();
+});
+
+async function createRoom() {
+    const name = document.getElementById('roomName').value.trim();
+    const maxUsers = parseInt(document.getElementById('maxUsers').value) || 10;
+    const canvasWidth = parseInt(document.getElementById('canvasWidth').value) || 1024;
+    const canvasHeight = parseInt(document.getElementById('canvasHeight').value) || 1024;
+    const password = document.getElementById('roomPassword').value.trim() || null;
+    const errorEl = document.getElementById('createRoomError');
+
+    errorEl.style.display = 'none';
+
+    if (name.length < 3) {
+        errorEl.textContent = 'Room name must be at least 3 characters.';
+        errorEl.style.display = 'block';
+        return;
+    }
+
+    const res = await fetch('/api/rooms', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, maxUsers, canvasWidth, canvasHeight, password })
+    });
+
+    if (res.status === 201) {
+        const room = await res.json();
+        window.location.href = `/Canvas?roomId=${room.id}`;
+    } else if (res.status === 401) {
+        window.location.href = '/Auth/Login?returnUrl=/Rooms';
+    } else {
+        let msg = 'Failed to create room.';
+        try {
+            const body = await res.json();
+            if (body.errors) {
+                msg = Object.values(body.errors).flat().join(' ');
+            }
+        } catch {}
+        errorEl.textContent = msg;
+        errorEl.style.display = 'block';
+    }
+}
+
+/* ===== DELETE ROOM ===== */
+let pendingDeleteId = null;
+
+function confirmDeleteRoom(roomId, roomName) {
+    pendingDeleteId = roomId;
+    document.getElementById('deleteRoomName').textContent = roomName;
+    document.getElementById('deleteRoomError').style.display = 'none';
+    document.getElementById('deleteRoomOverlay').style.display = 'flex';
+}
+
+function hideDeleteRoomDialog() {
+    document.getElementById('deleteRoomOverlay').style.display = 'none';
+    pendingDeleteId = null;
+}
+
+async function deleteRoom() {
+    if (!pendingDeleteId) return;
+    const errorEl = document.getElementById('deleteRoomError');
+    errorEl.style.display = 'none';
+
+    const res = await fetch(`/api/rooms/${pendingDeleteId}`, { method: 'DELETE' });
+
+    if (res.status === 204) {
+        const row = document.getElementById('room-row-' + pendingDeleteId);
+        if (row) row.remove();
+        hideDeleteRoomDialog();
+    } else if (res.status === 401) {
+        window.location.href = '/Auth/Login?returnUrl=/Rooms';
+    } else if (res.status === 403) {
+        errorEl.textContent = 'You can only delete rooms you created.';
+        errorEl.style.display = 'block';
+    } else if (res.status === 404) {
+        errorEl.textContent = 'Room not found.';
+        errorEl.style.display = 'block';
+    }
+}
+
+document.getElementById('deleteRoomOverlay').addEventListener('click', function (e) {
+    if (e.target === this) hideDeleteRoomDialog();
+});
+</script>

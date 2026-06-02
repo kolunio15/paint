@@ -5,6 +5,6 @@ Bin/
 *.user
 *.db
 *.db-*
-*.db
 *.db-shm
 *.db-wal
+Paint/wwwroot/uploads/

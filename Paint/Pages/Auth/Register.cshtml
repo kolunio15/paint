@@ -4,36 +4,65 @@
     ViewData["Title"] = "Register";
 }
 
-<main style="max-width: 420px; margin: 32px auto;">
-    <h1>Register</h1>
-
-    <form method="post">
-        <input type="hidden" asp-for="ReturnUrl" />
-        <div asp-validation-summary="ModelOnly" style="color: #8b0000;"></div>
-
-        <div style="margin-bottom: 12px;">
-            <label asp-for="Input.UserName"></label><br />
-            <input asp-for="Input.UserName" autocomplete="username" />
-            <span asp-validation-for="Input.UserName" style="color: #8b0000;"></span>
+<main style="max-width: 400px; margin: 32px auto;">
+    <div class="win-window">
+        <div class="gallery-titlebar">
+            <div class="titlebar-title" style="--titlebar-icon: url('/icons/address_book_user.ico')">
+                Create Account
+            </div>
+            <div class="gallery-titlebar-buttons">
+                <div class="titlebar-btn">_</div>
+                <div class="titlebar-btn titlebar-btn-max"></div>
+                <div class="titlebar-btn">✕</div>
+            </div>
         </div>
 
-        <div style="margin-bottom: 12px;">
-            <label asp-for="Input.Password"></label><br />
-            <input asp-for="Input.Password" autocomplete="new-password" />
-            <span asp-validation-for="Input.Password" style="color: #8b0000;"></span>
+        <div style="padding: 16px; background: #ece9d8;">
+            <form method="post">
+                <input type="hidden" asp-for="ReturnUrl" />
+                <div asp-validation-summary="ModelOnly" style="color: #8b0000; margin-bottom: 10px;"></div>
+
+                <fieldset style="border: 1px solid #808080; padding: 10px 14px 12px; margin-bottom: 12px; background: #ece9d8;">
+                    <legend style="padding: 0 6px; font-size: 11px;">Account Details</legend>
+
+                    <div style="display: grid; grid-template-columns: 80px 1fr; gap: 8px; align-items: start; font-size: 12px;">
+                        <label asp-for="Input.UserName" style="text-align: right; padding-top: 3px;">Username:</label>
+                        <div>
+                            <input asp-for="Input.UserName" autocomplete="username"
+                                   class="win-window-inset"
+                                   style="padding: 2px 4px; font-size: 12px; font-family: inherit; width: 100%;" />
+                            <span asp-validation-for="Input.UserName" style="color: #8b0000; font-size: 11px;"></span>
+                        </div>
+
+                        <label asp-for="Input.Password" style="text-align: right; padding-top: 3px;">Password:</label>
+                        <div>
+                            <input asp-for="Input.Password" autocomplete="new-password"
+                                   class="win-window-inset"
+                                   style="padding: 2px 4px; font-size: 12px; font-family: inherit; width: 100%;" />
+                            <span asp-validation-for="Input.Password" style="color: #8b0000; font-size: 11px;"></span>
+                        </div>
+
+                        <label asp-for="Input.ConfirmPassword" style="text-align: right; padding-top: 3px;">Confirm:</label>
+                        <div>
+                            <input asp-for="Input.ConfirmPassword" autocomplete="new-password"
+                                   class="win-window-inset"
+                                   style="padding: 2px 4px; font-size: 12px; font-family: inherit; width: 100%;" />
+                            <span asp-validation-for="Input.ConfirmPassword" style="color: #8b0000; font-size: 11px;"></span>
+                        </div>
+                    </div>
+                </fieldset>
+
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <a asp-page="/Auth/Login" asp-route-returnUrl="@Model.ReturnUrl"
+                       style="font-size: 12px; color: #000080;">Already have an account? Log in</a>
+                    <button type="submit" class="comment-submit">Register</button>
+                </div>
+            </form>
         </div>
 
-        <div style="margin-bottom: 12px;">
-            <label asp-for="Input.ConfirmPassword"></label><br />
-            <input asp-for="Input.ConfirmPassword" autocomplete="new-password" />
-            <span asp-validation-for="Input.ConfirmPassword" style="color: #8b0000;"></span>
+        <div class="gallery-statusbar">
+            <span>Create a new account</span>
+            <span>Ready</span>
         </div>
-
-        <button type="submit">Register</button>
-    </form>
-
-    <p>
-        Already have an account?
-        <a asp-page="/Auth/Login" asp-route-returnUrl="@Model.ReturnUrl">Log in</a>
-    </p>
+    </div>
 </main>

@@ -4,37 +4,59 @@
     ViewData["Title"] = "Log in";
 }
 
-<main style="max-width: 420px; margin: 32px auto;">
-    <h1>Log in</h1>
-
-    <form method="post">
-        <input type="hidden" asp-for="ReturnUrl" />
-        <div asp-validation-summary="ModelOnly" style="color: #8b0000;"></div>
-
-        <div style="margin-bottom: 12px;">
-            <label asp-for="Input.UserName"></label><br />
-            <input asp-for="Input.UserName" autocomplete="username" />
-            <span asp-validation-for="Input.UserName" style="color: #8b0000;"></span>
+<main style="max-width: 400px; margin: 32px auto;">
+    <div class="win-window">
+        <div class="gallery-titlebar">
+            <div class="titlebar-title" style="--titlebar-icon: url('/icons/key.ico')">
+                Log In
+            </div>
+            <div class="gallery-titlebar-buttons">
+                <div class="titlebar-btn">_</div>
+                <div class="titlebar-btn titlebar-btn-max"></div>
+                <div class="titlebar-btn">✕</div>
+            </div>
         </div>
 
-        <div style="margin-bottom: 12px;">
-            <label asp-for="Input.Password"></label><br />
-            <input asp-for="Input.Password" autocomplete="current-password" />
-            <span asp-validation-for="Input.Password" style="color: #8b0000;"></span>
+        <div style="padding: 16px; background: #ece9d8;">
+            <div asp-validation-summary="ModelOnly" style="color: #8b0000; margin-bottom: 10px; padding: 4px; border: 1px solid #8b0000; background: #fff0f0; display: none;"
+                 id="validationSummary"></div>
+
+            <form method="post">
+                <input type="hidden" asp-for="ReturnUrl" />
+                <div asp-validation-summary="ModelOnly" style="color: #8b0000; margin-bottom: 10px;"></div>
+
+                <fieldset style="border: 1px solid #808080; padding: 10px 14px 12px; margin-bottom: 12px; background: #ece9d8;">
+                    <legend style="padding: 0 6px; font-size: 11px;">Credentials</legend>
+
+                    <div style="display: grid; grid-template-columns: 80px 1fr; gap: 8px; align-items: center; font-size: 12px;">
+                        <label asp-for="Input.UserName" style="text-align: right;">Username:</label>
+                        <input asp-for="Input.UserName" autocomplete="username"
+                               class="win-window-inset"
+                               style="padding: 2px 4px; font-size: 12px; font-family: inherit; width: 100%;" />
+
+                        <label asp-for="Input.Password" style="text-align: right;">Password:</label>
+                        <input asp-for="Input.Password" autocomplete="current-password"
+                               class="win-window-inset"
+                               style="padding: 2px 4px; font-size: 12px; font-family: inherit; width: 100%;" />
+                    </div>
+
+                    <div style="margin-top: 10px; font-size: 12px; display: flex; align-items: center; gap: 6px;">
+                        <input asp-for="Input.RememberMe" style="margin: 0;" />
+                        <label asp-for="Input.RememberMe" style="margin: 0;">Remember me</label>
+                    </div>
+                </fieldset>
+
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <a asp-page="/Auth/Register" asp-route-returnUrl="@Model.ReturnUrl"
+                       style="font-size: 12px; color: #000080;">No account? Register</a>
+                    <button type="submit" class="comment-submit">Log In</button>
+                </div>
+            </form>
         </div>
 
-        <div style="margin-bottom: 12px;">
-            <label>
-                <input asp-for="Input.RememberMe" />
-                Remember me
-            </label>
+        <div class="gallery-statusbar">
+            <span>Please log in</span>
+            <span>Ready</span>
         </div>
-
-        <button type="submit">Log in</button>
-    </form>
-
-    <p>
-        No account yet?
-        <a asp-page="/Auth/Register" asp-route-returnUrl="@Model.ReturnUrl">Register</a>
-    </p>
+    </div>
 </main>
