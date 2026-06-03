@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Paint.Models;
+using Paint.Services;
 
 namespace Paint.Pages.Auth;
 
@@ -12,11 +13,15 @@ public class RegisterModel : PageModel
 {
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly SignInManager<ApplicationUser> _signInManager;
+    private readonly BanService _banService;
+    private readonly ModerationService _moderation;
 
-    public RegisterModel(UserManager<ApplicationUser> userManager, SignInManager<ApplicationUser> signInManager)
+    public RegisterModel(UserManager<ApplicationUser> userManager, SignInManager<ApplicationUser> signInManager, BanService banService, ModerationService moderation)
     {
         _userManager = userManager;
         _signInManager = signInManager;
+        _banService = banService;
+        _moderation = moderation;
     }
 
     [BindProperty]
@@ -36,17 +41,33 @@ public class RegisterModel : PageModel
             return Page();
         }
 
+        var ip = HttpContext.Connection.RemoteIpAddress?.ToString();
+        if (ip is not null && await _banService.IsIdentifierBannedAsync(BannedIdentifierType.Ip, ip))
+        {
+            ModelState.AddModelError(string.Empty, "Registration is not available from your location.");
+            return Page();
+        }
+
+        if (!string.IsNullOrWhiteSpace(Input.DeviceToken) &&
+            await _banService.IsIdentifierBannedAsync(BannedIdentifierType.DeviceToken, Input.DeviceToken))
+        {
+            ModelState.AddModelError(string.Empty, "Registration is not available from this device.");
+            return Page();
+        }
+
         var user = new ApplicationUser
         {
             UserName = Input.UserName.Trim(),
             DisplayName = Input.UserName.Trim(),
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.UtcNow,
+            LastKnownIp = ip is not null ? BanService.HashValue(ip) : null
         };
 
         var result = await _userManager.CreateAsync(user, Input.Password);
         if (result.Succeeded)
         {
             await _signInManager.SignInAsync(user, isPersistent: false);
+            await _moderation.EnqueueAsync(QueueItemType.UserRegistered, targetUserId: user.Id);
             return RedirectToLocal(ReturnUrl);
         }
 
@@ -85,5 +106,7 @@ public class RegisterModel : PageModel
         [Display(Name = "Confirm password")]
         [Compare(nameof(Password))]
         public string ConfirmPassword { get; set; } = "";
+
+        public string? DeviceToken { get; set; }
     }
 }

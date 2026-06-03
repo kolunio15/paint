@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Paint.Contracts;
+using Paint.Models;
 using Paint.Services;
 
 namespace Paint.Controllers;
@@ -12,11 +13,13 @@ public class ArtworksController : ControllerBase
 {
     private readonly IArtworkRepository _artworks;
     private readonly IWebHostEnvironment _environment;
+    private readonly ModerationService _moderation;
 
-    public ArtworksController(IArtworkRepository artworks, IWebHostEnvironment environment)
+    public ArtworksController(IArtworkRepository artworks, IWebHostEnvironment environment, ModerationService moderation)
     {
         _artworks = artworks;
         _environment = environment;
+        _moderation = moderation;
     }
 
     [HttpGet]
@@ -25,7 +28,8 @@ public class ArtworksController : ControllerBase
         [FromQuery] int count = 20,
         CancellationToken cancellationToken = default)
     {
-        var artworks = await _artworks.GetArtworksAsync(lastArtworkId, count, cancellationToken);
+        var includeHidden = User.IsInRole("Admin") || User.IsInRole("Moderator");
+        var artworks = await _artworks.GetArtworksAsync(lastArtworkId, count, includeHidden, cancellationToken);
         return Ok(artworks);
     }
 
@@ -34,7 +38,8 @@ public class ArtworksController : ControllerBase
         int artworkId,
         CancellationToken cancellationToken)
     {
-        var artwork = await _artworks.GetArtworkDetailsAsync(artworkId, cancellationToken);
+        var includeHidden = User.IsInRole("Admin") || User.IsInRole("Moderator");
+        var artwork = await _artworks.GetArtworkDetailsAsync(artworkId, includeHidden, cancellationToken);
         return artwork is null ? NotFound() : Ok(artwork);
     }
 
@@ -78,6 +83,9 @@ public class ArtworksController : ControllerBase
             userId,
             request.Message,
             cancellationToken);
+
+        if (comment is not null)
+            await _moderation.EnqueueAsync(QueueItemType.CommentPosted, targetArtworkId: artworkId);
 
         return comment is null ? NotFound() : Created($"/api/artworks/{artworkId}/comments", comment);
     }
@@ -126,6 +134,8 @@ public class ArtworksController : ControllerBase
                 $"/uploads/artworks/{fileName}",
                 userId,
                 cancellationToken);
+
+            await _moderation.EnqueueAsync(QueueItemType.ArtworkPublished, targetArtworkId: artwork.Id);
 
             return Created($"/api/artworks/{artwork.Id}", artwork.Id);
         }

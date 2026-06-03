@@ -20,6 +20,7 @@
         <div style="padding: 16px; background: #ece9d8;">
             <form method="post">
                 <input type="hidden" asp-for="ReturnUrl" />
+                <input type="hidden" asp-for="Input.DeviceToken" />
                 <div asp-validation-summary="ModelOnly" style="color: #8b0000; margin-bottom: 10px;"></div>
 
                 <fieldset style="border: 1px solid #808080; padding: 10px 14px 12px; margin-bottom: 12px; background: #ece9d8;">
@@ -57,6 +58,9 @@
                        style="font-size: 12px; color: #000080;">Already have an account? Log in</a>
                     <button type="submit" class="comment-submit">Register</button>
                 </div>
+                <p style="font-size: 10px; color: #666; margin: 10px 0 0; text-align:center;">
+                    By registering, you agree that we may store a security token and hashed network identifiers to prevent abuse.
+                </p>
             </form>
         </div>
 
@@ -66,3 +70,4 @@
         </div>
     </div>
 </main>
+<script src="~/js/device-token.js"></script>

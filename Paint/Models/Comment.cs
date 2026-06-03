@@ -6,6 +6,11 @@ public class Comment
     public required string Content { get; set; }
     public DateTime CreatedAt { get; set; }
 
+    public bool IsHidden { get; set; }
+    public DateTime? HiddenAt { get; set; }
+    public string? HiddenById { get; set; }
+    public DateTime? ScheduledDeletionAt { get; set; }
+
     public int ArtworkId { get; set; }
     public Artwork Artwork { get; set; } = null!;
 

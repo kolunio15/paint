@@ -8,10 +8,12 @@ public interface IArtworkRepository
     Task<IReadOnlyList<ArtworkSummaryDto>> GetArtworksAsync(
         int? lastArtworkId,
         int count,
+        bool includeHidden = false,
         CancellationToken cancellationToken = default);
 
     Task<ArtworkDetailsDto?> GetArtworkDetailsAsync(
         int artworkId,
+        bool includeHidden = false,
         CancellationToken cancellationToken = default);
 
     Task<Artwork> PublishArtworkAsync(

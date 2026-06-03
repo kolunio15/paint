@@ -19,12 +19,12 @@ public class EfRoomRepository : IRoomRepository
 
     public async Task<IReadOnlyList<RoomSummaryDto>> GetRoomsAsync(
         IReadOnlyDictionary<int, int> activeUserCounts,
+        bool includeHidden = false,
         CancellationToken cancellationToken = default)
     {
-        var rooms = await _dbContext.Rooms
-            .AsNoTracking()
-            .OrderBy(room => room.Name)
-            .ToListAsync(cancellationToken);
+        IQueryable<Room> query = _dbContext.Rooms.AsNoTracking();
+        if (!includeHidden) query = query.Where(r => !r.IsHidden);
+        var rooms = await query.OrderBy(r => r.Name).ToListAsync(cancellationToken);
 
         return rooms
             .Select(room =>
@@ -115,8 +115,18 @@ public class EfRoomRepository : IRoomRepository
         string userId,
         CancellationToken cancellationToken = default)
     {
-        var globalEventId = await _dbContext.CanvasEvents
+        // globalId is a stable, contiguous per-room sequence that survives compaction:
+        // base offset (SnapshotGlobalId) + number of live events still in the log.
+        var snapshotGlobalId = await _dbContext.Rooms
+            .AsNoTracking()
+            .Where(room => room.Id == roomId)
+            .Select(room => (int?)room.SnapshotGlobalId)
+            .FirstOrDefaultAsync(cancellationToken) ?? -1;
+
+        var liveCount = await _dbContext.CanvasEvents
             .CountAsync(canvasEvent => canvasEvent.RoomId == roomId, cancellationToken);
+
+        var globalEventId = snapshotGlobalId + 1 + liveCount;
 
         var canvasEvent = new CanvasEvent
         {
@@ -139,6 +149,12 @@ public class EfRoomRepository : IRoomRepository
         int? endGlobalId,
         CancellationToken cancellationToken = default)
     {
+        var snapshotGlobalId = await _dbContext.Rooms
+            .AsNoTracking()
+            .Where(room => room.Id == roomId)
+            .Select(room => (int?)room.SnapshotGlobalId)
+            .FirstOrDefaultAsync(cancellationToken) ?? -1;
+
         var events = await _dbContext.CanvasEvents
             .AsNoTracking()
             .Where(canvasEvent => canvasEvent.RoomId == roomId)
@@ -146,11 +162,89 @@ public class EfRoomRepository : IRoomRepository
             .ToListAsync(cancellationToken);
 
         return events
-            .Select(ToEventDto)
+            .Select((canvasEvent, index) => ToEventDto(canvasEvent, snapshotGlobalId + 1 + index))
             .Where(canvasEvent =>
                 canvasEvent.GlobalEventId >= startGlobalId &&
                 (!endGlobalId.HasValue || canvasEvent.GlobalEventId < endGlobalId.Value))
             .ToList();
+    }
+
+    public async Task<(string? Path, int GlobalId)> GetRoomSnapshotAsync(
+        int roomId,
+        CancellationToken cancellationToken = default)
+    {
+        var room = await _dbContext.Rooms
+            .AsNoTracking()
+            .Where(candidate => candidate.Id == roomId)
+            .Select(candidate => new { candidate.SnapshotPath, candidate.SnapshotGlobalId })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return room is null ? (null, -1) : (room.SnapshotPath, room.SnapshotGlobalId);
+    }
+
+    public async Task<bool> ApplySnapshotAsync(
+        int roomId,
+        string snapshotPath,
+        int globalId,
+        CancellationToken cancellationToken = default)
+    {
+        var room = await _dbContext.Rooms
+            .FirstOrDefaultAsync(candidate => candidate.Id == roomId, cancellationToken);
+
+        if (room is null)
+        {
+            return false;
+        }
+
+        var liveCount = await _dbContext.CanvasEvents
+            .CountAsync(canvasEvent => canvasEvent.RoomId == roomId, cancellationToken);
+
+        var newestGlobalId = room.SnapshotGlobalId + liveCount;
+
+        // Ignore stale snapshots (already compacted past this point) or ones that
+        // claim to cover events that don't exist yet.
+        if (globalId <= room.SnapshotGlobalId || globalId > newestGlobalId)
+        {
+            return false;
+        }
+
+        var deleteCount = globalId - room.SnapshotGlobalId;
+        var toDelete = await _dbContext.CanvasEvents
+            .Where(canvasEvent => canvasEvent.RoomId == roomId)
+            .OrderBy(canvasEvent => canvasEvent.Id)
+            .Take(deleteCount)
+            .ToListAsync(cancellationToken);
+
+        _dbContext.CanvasEvents.RemoveRange(toDelete);
+        room.SnapshotPath = snapshotPath;
+        room.SnapshotGlobalId = globalId;
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
+    public async Task<string?> ClearRoomEventsAsync(
+        int roomId,
+        CancellationToken cancellationToken = default)
+    {
+        var room = await _dbContext.Rooms
+            .FirstOrDefaultAsync(candidate => candidate.Id == roomId, cancellationToken);
+
+        if (room is null)
+        {
+            return null;
+        }
+
+        var previousSnapshotPath = room.SnapshotPath;
+
+        var events = await _dbContext.CanvasEvents
+            .Where(canvasEvent => canvasEvent.RoomId == roomId)
+            .ToListAsync(cancellationToken);
+
+        _dbContext.CanvasEvents.RemoveRange(events);
+        room.SnapshotPath = null;
+        room.SnapshotGlobalId = -1;
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return previousSnapshotPath;
     }
 
     private static RoomSummaryDto ToSummary(Room room, int activeUserCount)
@@ -162,7 +256,8 @@ public class EfRoomRepository : IRoomRepository
             room.MaxUsers,
             room.CanvasWidth,
             room.CanvasHeight,
-            room.IsProtected);
+            room.IsProtected,
+            room.IsHidden);
     }
 
     private static RoomEventDto ToEventDto(CanvasEvent canvasEvent, int globalEventId)

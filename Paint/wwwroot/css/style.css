@@ -209,7 +209,7 @@ main {
     align-items: center;
     gap: 2px;
     background: #c0c0c0;
-    padding: 2px 4px;
+    padding: 4px 4px;
     border-top: 1px solid #808080;
 }
 
@@ -543,6 +543,60 @@ main {
 .vote-controls button:hover {
     background: #d4d4d4;
 }
+
+/* Pasek moderacyjny pod miniaturką */
+.mod-bar {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 1px 4px 2px;
+    background: #d4d0c8;
+    border-top: 1px solid #808080;
+}
+
+.mod-bar-btn {
+    background: #c0c0c0;
+    border-top: 1px solid #ffffff;
+    border-left: 1px solid #ffffff;
+    border-bottom: 1px solid #404040;
+    border-right: 1px solid #404040;
+    padding: 1px 6px;
+    font-size: 11px;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.mod-bar-btn:active {
+    border-top: 1px solid #404040;
+    border-left: 1px solid #404040;
+    border-bottom: 1px solid #ffffff;
+    border-right: 1px solid #ffffff;
+}
+
+.mod-bar-btn-danger { color: #8b0000; }
+.mod-bar-btn-ok { color: #2a5c2a; }
+
+.mod-hidden-badge {
+    font-size: 10px;
+    color: #8b0000;
+    border: 1px solid #8b0000;
+    padding: 0 4px;
+    margin-right: 2px;
+    background: #fff0f0;
+}
+
+.mod-flag-btn {
+    background: none;
+    border: none;
+    padding: 0 2px;
+    cursor: pointer;
+    font-size: 12px;
+    color: #808080;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.mod-flag-btn:hover { color: #8b0000; }
 
 /* Liczba punktów */
 .vote-points {

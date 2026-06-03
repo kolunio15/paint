@@ -28,7 +28,7 @@
                             <th style="text-align: left; padding: 4px; border-right: 1px solid #808080; font-weight: normal;">Room Name</th>
                             <th style="text-align: right; padding: 4px; border-right: 1px solid #808080; font-weight: normal; width: 80px;">Users</th>
                             <th style="text-align: center; padding: 4px; border-right: 1px solid #808080; font-weight: normal; width: 80px;">Status</th>
-                            <th style="text-align: center; padding: 4px; font-weight: normal; width: 80px;">Action</th>
+                            <th style="text-align: center; padding: 4px; font-weight: normal; width: 130px;">Action</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -50,16 +50,39 @@
                                         <span style="vertical-align: middle;">Public</span>
                                     }
                                 </td>
-                                <td style="text-align: center; padding: 2px; display: flex; gap: 2px; justify-content: center;">
-                                    <a asp-page="/Canvas" asp-route-roomId="@room.Id" class="toolbar-btn" style="justify-content: center;">
+                                <td style="text-align: center; padding: 2px; display: flex; gap: 2px; justify-content: center; align-items: center;">
+                                    <button class="toolbar-btn" style="justify-content:center;"
+                                            onclick="joinRoom(@room.Id, @room.IsProtected.ToString().ToLower())">
                                         Join
-                                    </a>
+                                    </button>
                                     @if (User.Identity?.IsAuthenticated == true)
                                     {
-                                        <button class="toolbar-btn" style="justify-content:center;color:#8b0000;border-color:#8b0000"
+                                        <button class="toolbar-btn" style="justify-content:center;"
                                                 onclick="confirmDeleteRoom(@room.Id, '@Html.Raw(room.Name.Replace("'", "\\'"))')">
-                                            Del
+                                            Delete
                                         </button>
+                                    }
+                                    @if (User.IsInRole("Admin") || User.IsInRole("Moderator"))
+                                    {
+                                        @if (!room.IsHidden)
+                                        {
+                                            <button class="toolbar-btn" style="justify-content:center; color:#8b4513;" title="Hide room"
+                                                    onclick="moderateRoom(@room.Id, 'hide')">
+                                                <img src="/icons/msagent.ico" width="13" height="13" style="image-rendering:pixelated; vertical-align:middle;"> Hide
+                                            </button>
+                                        }
+                                        else
+                                        {
+                                            <button class="toolbar-btn" style="justify-content:center; color:#2a5c2a;" title="Unhide room"
+                                                    onclick="moderateRoom(@room.Id, 'unhide')">
+                                                <img src="/icons/file_eye.ico" width="13" height="13" style="image-rendering:pixelated; vertical-align:middle;"> Show
+                                            </button>
+                                        }
+                                    }
+                                    @if (User.Identity?.IsAuthenticated == true && !User.IsInRole("Admin") && !User.IsInRole("Moderator"))
+                                    {
+                                        <button class="mod-flag-btn" title="Report"
+                                                onclick="openReportModal(@room.Id)">⚑</button>
                                     }
                                 </td>
                             </tr>
@@ -158,7 +181,17 @@
     </div>
 </div>
 
+@Html.AntiForgeryToken()
 <script>
+const userIsModOrAdmin = @((User.IsInRole("Admin") || User.IsInRole("Moderator")).ToString().ToLower());
+
+function antiforgeryHeaders() {
+    const token = document.querySelector('input[name="__RequestVerificationToken"]')?.value;
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['RequestVerificationToken'] = token;
+    return headers;
+}
+
 function showCreateRoomDialog() {
     document.getElementById('createRoomError').style.display = 'none';
     document.getElementById('roomName').value = '';
@@ -260,4 +293,132 @@ async function deleteRoom() {
 document.getElementById('deleteRoomOverlay').addEventListener('click', function (e) {
     if (e.target === this) hideDeleteRoomDialog();
 });
+
+let _joinRoomId = null;
+
+function joinRoom(roomId, isProtected) {
+    if (isProtected && !userIsModOrAdmin) {
+        _joinRoomId = roomId;
+        document.getElementById('roomPasswordInput').value = '';
+        document.getElementById('roomPasswordError').style.display = 'none';
+        const el = document.getElementById('passwordOverlay');
+        el.style.display = 'flex';
+        setTimeout(() => document.getElementById('roomPasswordInput').focus(), 50);
+    } else {
+        window.location.href = `/Canvas?roomId=${roomId}`;
+    }
+}
+
+function hidePasswordDialog() {
+    document.getElementById('passwordOverlay').style.display = 'none';
+    _joinRoomId = null;
+}
+
+async function confirmJoinWithPassword() {
+    const password = document.getElementById('roomPasswordInput').value;
+    const errorEl = document.getElementById('roomPasswordError');
+    errorEl.style.display = 'none';
+
+    const res = await fetch(`/api/rooms/${_joinRoomId}/verify-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password })
+    });
+
+    if (res.ok) {
+        sessionStorage.setItem(`roomPassword_${_joinRoomId}`, password);
+        window.location.href = `/Canvas?roomId=${_joinRoomId}`;
+    } else if (res.status === 403) {
+        errorEl.textContent = 'Incorrect password.';
+        errorEl.style.display = 'block';
+    } else {
+        errorEl.textContent = 'Could not verify password.';
+        errorEl.style.display = 'block';
+    }
+}
+
+document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && document.getElementById('passwordOverlay').style.display === 'flex') {
+        hidePasswordDialog();
+    }
+});
+
+async function moderateRoom(roomId, action) {
+    const res = await fetch(`/api/moderation/${action}`, {
+        method: 'POST',
+        headers: antiforgeryHeaders(),
+        body: JSON.stringify({ roomId })
+    });
+    if (res.ok) location.reload();
+}
+
+let _reportRoomId = null;
+
+function openReportModal(roomId) {
+    _reportRoomId = roomId;
+    document.getElementById('reportReasonInput').value = '';
+    document.getElementById('reportOverlay').style.display = 'flex';
+    setTimeout(() => document.getElementById('reportReasonInput').focus(), 50);
+}
+
+function closeReportModal() {
+    document.getElementById('reportOverlay').style.display = 'none';
+}
+
+async function submitReport() {
+    const reason = document.getElementById('reportReasonInput').value.trim() || null;
+    await fetch('/api/moderation/report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetRoomId: _reportRoomId, reason })
+    });
+    closeReportModal();
+}
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeReportModal(); });
 </script>
+
+<div id="reportOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.3); z-index:1000; align-items:center; justify-content:center;">
+    <div class="win-window" style="width:320px; box-shadow:4px 4px 0 #000;">
+        <div class="gallery-titlebar">
+            <div class="titlebar-title" style="--titlebar-icon:url('/icons/msg_warning.ico')">Report Room</div>
+            <div class="gallery-titlebar-buttons">
+                <div class="titlebar-btn" onclick="closeReportModal()">✕</div>
+            </div>
+        </div>
+        <div style="padding:12px 16px; background:#ece9d8;">
+            <p style="margin:0 0 8px; font-size:12px;">Describe the issue (optional):</p>
+            <input id="reportReasonInput" type="text" class="win-window-inset"
+                   style="width:100%; padding:2px 4px; font-size:12px; font-family:inherit;"
+                   placeholder="e.g. inappropriate content"
+                   onkeydown="if(event.key==='Enter') submitReport()" />
+        </div>
+        <div style="padding:6px 16px 10px; background:#ece9d8; display:flex; justify-content:flex-end; gap:6px; border-top:1px solid #808080;">
+            <button class="comment-submit" onclick="submitReport()">Report</button>
+            <button class="toolbar-btn" style="justify-content:center; min-width:64px;" onclick="closeReportModal()">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<div id="passwordOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.3); z-index:1000; align-items:center; justify-content:center;">
+    <div class="win-window" style="width:320px; box-shadow:4px 4px 0 #000;">
+        <div class="gallery-titlebar">
+            <div class="titlebar-title" style="--titlebar-icon:url('/icons/key_padlock.ico')">Password Required</div>
+            <div class="gallery-titlebar-buttons">
+                <div class="titlebar-btn" onclick="hidePasswordDialog()">✕</div>
+            </div>
+        </div>
+        <div style="padding:12px 16px; background:#ece9d8;">
+            <div id="roomPasswordError" style="color:#8b0000; display:none; margin-bottom:6px; font-size:12px;"></div>
+            <p style="margin:0 0 8px; font-size:12px;">This room is password protected:</p>
+            <input id="roomPasswordInput" type="password" class="win-window-inset"
+                   style="width:100%; padding:2px 4px; font-size:12px; font-family:inherit;"
+                   placeholder="Enter room password"
+                   onkeydown="if(event.key==='Enter') confirmJoinWithPassword()" />
+        </div>
+        <div style="padding:6px 16px 10px; background:#ece9d8; display:flex; justify-content:flex-end; gap:6px; border-top:1px solid #808080;">
+            <button class="comment-submit" onclick="confirmJoinWithPassword()">Join</button>
+            <button class="toolbar-btn" style="justify-content:center; min-width:64px;" onclick="hidePasswordDialog()">Cancel</button>
+        </div>
+    </div>
+</div>

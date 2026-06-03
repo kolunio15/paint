@@ -18,7 +18,8 @@ public class ArtworkModel : PageModel
 
     public async Task<IActionResult> OnGetAsync(int id, CancellationToken cancellationToken)
     {
-        var artwork = await _artworks.GetArtworkDetailsAsync(id, cancellationToken);
+        var includeHidden = User.IsInRole("Admin") || User.IsInRole("Moderator");
+        var artwork = await _artworks.GetArtworkDetailsAsync(id, includeHidden, cancellationToken);
         if (artwork is null) return NotFound();
         Artwork = artwork;
         return Page();

@@ -1,0 +1,64 @@
+@page
+@model Paint.Pages.Admin.AdminActionsModel
+@{
+    ViewData["Title"] = "Audit Log";
+}
+
+<main style="max-width: 960px; margin: 10px auto; padding: 0 10px;">
+
+    <div class="explorer-toolbar">
+        <a asp-page="/Admin/Index" class="toolbar-btn">
+            <div class="back-arrow"></div>
+            Back
+        </a>
+        <div class="toolbar-separator"></div>
+        <span class="toolbar-address">
+            <img src="~/icons/event_log.ico" width="16" height="16" alt="" style="image-rendering:pixelated;object-fit:contain">
+            Admin / Audit Log
+        </span>
+    </div>
+
+    <div class="win-window">
+        <div class="gallery-titlebar">
+            <div class="titlebar-title">Audit Log</div>
+        </div>
+
+        <div style="padding: 12px; background: #ece9d8;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                <thead>
+                    <tr style="background: #c0c0c0; text-align: left;">
+                        <th style="padding: 4px 8px;">Date</th>
+                        <th style="padding: 4px 8px;">Moderator</th>
+                        <th style="padding: 4px 8px;">Action</th>
+                        <th style="padding: 4px 8px;">Target</th>
+                        <th style="padding: 4px 8px;">Reason / Expires</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var action in Model.Actions)
+                    {
+                        <tr style="border-bottom: 1px solid #ccc;">
+                            <td style="padding: 4px 8px;">@action.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                            <td style="padding: 4px 8px;">@action.Moderator?.UserName</td>
+                            <td style="padding: 4px 8px;">@action.Type</td>
+                            <td style="padding: 4px 8px;">
+                                @if (action.TargetUserId is not null) { <span>User: <strong>@(action.TargetUser?.UserName ?? action.TargetUserId)</strong></span> }
+                                @if (action.TargetArtworkId.HasValue) { <span>Artwork #@action.TargetArtworkId</span> }
+                                @if (action.TargetCommentId.HasValue) { <span>Comment #@action.TargetCommentId</span> }
+                                @if (action.TargetRoomId.HasValue) { <span>Room #@action.TargetRoomId</span> }
+                            </td>
+                            <td style="padding: 4px 8px;">
+                                @action.Reason
+                                @if (action.ExpiresAt.HasValue) { <span> (until @action.ExpiresAt.Value.ToString("yyyy-MM-dd HH:mm"))</span> }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <div class="gallery-statusbar">
+            <span>@Model.Actions.Count entries</span>
+        </div>
+    </div>
+</main>

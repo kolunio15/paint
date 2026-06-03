@@ -34,6 +34,16 @@ public class LoginModel : PageModel
             return Page();
         }
 
+        var user = await _signInManager.UserManager.FindByNameAsync(Input.UserName.Trim());
+        if (user is not null && user.IsBanned &&
+            (user.BannedUntil is null || user.BannedUntil > DateTime.UtcNow))
+        {
+            var query = $"?reason={Uri.EscapeDataString(user.BanReason ?? "")}";
+            if (user.BannedUntil.HasValue)
+                query += $"&until={Uri.EscapeDataString(user.BannedUntil.Value.ToString("o"))}";
+            return Redirect("/Banned" + query);
+        }
+
         var result = await _signInManager.PasswordSignInAsync(
             Input.UserName.Trim(),
             Input.Password,

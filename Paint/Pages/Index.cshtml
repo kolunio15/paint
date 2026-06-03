@@ -24,7 +24,7 @@
         }
         @foreach (var artwork in Model.Artworks)
         {
-            <article>
+            <article @(artwork.IsHidden ? Html.Raw("style=\"opacity:0.55\"") : Html.Raw(""))>
                 <figure>
                     <a asp-page="/Artwork" asp-route-id="@artwork.Id">
                         <img src="@artwork.ThumbnailUrl" alt="@artwork.Title">
@@ -36,7 +36,26 @@
                             <span class="vote-points @(artwork.Score < 0 ? "points-negative" : "points-positive")" id="score-@artwork.Id">@artwork.Score</span>
                             <button onclick="vote(@artwork.Id, -1)">-</button>
                         </div>
+                        @if (User.Identity?.IsAuthenticated == true && !User.IsInRole("Admin") && !User.IsInRole("Moderator"))
+                        {
+                            <button class="mod-flag-btn" title="Report" onclick="openReportModal(@artwork.Id, null, null)">⚑</button>
+                        }
                     </div>
+                    @if (User.IsInRole("Admin") || User.IsInRole("Moderator"))
+                    {
+                        <div class="mod-bar">
+                            @if (!artwork.IsHidden)
+                            {
+                                <button class="mod-bar-btn mod-bar-btn-danger" onclick="moderateArtwork(@artwork.Id, 'hide')">Hide</button>
+                            }
+                            else
+                            {
+                                <span class="mod-hidden-badge">Hidden</span>
+                                <button class="mod-bar-btn mod-bar-btn-ok" onclick="moderateArtwork(@artwork.Id, 'unhide')">Unhide</button>
+                            }
+                            <button class="mod-bar-btn" title="Add to moderation queue" onclick="enqueueArtwork(@artwork.Id)">+ Queue</button>
+                        </div>
+                    }
                 </figure>
             </article>
         }
@@ -49,7 +68,62 @@
     </div>
 </main>
 
+@Html.AntiForgeryToken()
 <script>
+function antiforgeryHeaders() {
+    const token = document.querySelector('input[name="__RequestVerificationToken"]')?.value;
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['RequestVerificationToken'] = token;
+    return headers;
+}
+
+async function moderateArtwork(artworkId, action) {
+    const res = await fetch(`/api/moderation/${action}`, {
+        method: 'POST',
+        headers: antiforgeryHeaders(),
+        body: JSON.stringify({ artworkId })
+    });
+    if (res.ok) location.reload();
+}
+
+async function enqueueArtwork(artworkId) {
+    await fetch('/api/moderation/enqueue', {
+        method: 'POST',
+        headers: antiforgeryHeaders(),
+        body: JSON.stringify({ targetArtworkId: artworkId })
+    });
+}
+
+let _reportTarget = {};
+
+function openReportModal(artworkId, commentId, roomId) {
+    _reportTarget = { artworkId, commentId, roomId };
+    document.getElementById('reportReasonInput').value = '';
+    document.getElementById('reportOverlay').style.display = 'flex';
+    setTimeout(() => document.getElementById('reportReasonInput').focus(), 50);
+}
+
+function closeReportModal() {
+    document.getElementById('reportOverlay').style.display = 'none';
+}
+
+async function submitReport() {
+    const reason = document.getElementById('reportReasonInput').value.trim() || null;
+    await fetch('/api/moderation/report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            targetArtworkId: _reportTarget.artworkId ?? null,
+            targetCommentId: _reportTarget.commentId ?? null,
+            targetRoomId: _reportTarget.roomId ?? null,
+            reason
+        })
+    });
+    closeReportModal();
+}
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeReportModal(); });
+
 async function vote(artworkId, value) {
     const res = await fetch(`/api/artworks/${artworkId}/vote`, {
         method: 'POST',
@@ -71,3 +145,25 @@ async function vote(artworkId, value) {
     }
 }
 </script>
+
+<div id="reportOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.3); z-index:1000; align-items:center; justify-content:center;">
+    <div class="win-window" style="width:320px; box-shadow:4px 4px 0 #000;">
+        <div class="gallery-titlebar">
+            <div class="titlebar-title" style="--titlebar-icon:url('/icons/msg_warning.ico')">Report Content</div>
+            <div class="gallery-titlebar-buttons">
+                <div class="titlebar-btn" onclick="closeReportModal()">✕</div>
+            </div>
+        </div>
+        <div style="padding:12px 16px; background:#ece9d8;">
+            <p style="margin:0 0 8px; font-size:12px;">Describe the issue (optional):</p>
+            <input id="reportReasonInput" type="text" class="win-window-inset"
+                   style="width:100%; padding:2px 4px; font-size:12px; font-family:inherit;"
+                   placeholder="e.g. inappropriate content"
+                   onkeydown="if(event.key==='Enter') submitReport()" />
+        </div>
+        <div style="padding:6px 16px 10px; background:#ece9d8; display:flex; justify-content:flex-end; gap:6px; border-top:1px solid #808080;">
+            <button class="comment-submit" onclick="submitReport()">Report</button>
+            <button class="toolbar-btn" style="justify-content:center; min-width:64px;" onclick="closeReportModal()">Cancel</button>
+        </div>
+    </div>
+</div>

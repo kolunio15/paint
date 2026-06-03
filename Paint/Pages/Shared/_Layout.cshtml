@@ -3,6 +3,7 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width" />
+    <link rel="icon" href="~/icons/paint.ico" type="image/x-icon" />
     <link rel="stylesheet" href="~/css/style.css">
 
     @RenderSection("Style", required: false)
@@ -18,6 +19,14 @@
             @if (User.Identity?.IsAuthenticated == true)
             {
                 <li><a asp-page="/Account"><img src="~/icons/address_book_user.ico" width="16" height="16" alt="" style="image-rendering:pixelated;vertical-align:middle"> @User.Identity.Name</a></li>
+                @if (User.IsInRole("Moderator") || User.IsInRole("Admin"))
+                {
+                    <li><a asp-page="/Moderation/Index"><img src="~/icons/users_key.ico" width="16" height="16" alt="" style="image-rendering:pixelated;vertical-align:middle"> Moderation</a></li>
+                }
+                @if (User.IsInRole("Admin"))
+                {
+                    <li><a asp-page="/Admin/Index"><img src="~/icons/users_key.ico" width="16" height="16" alt="" style="image-rendering:pixelated;vertical-align:middle"> Admin</a></li>
+                }
                 <li>
                     <form method="post" asp-page="/Account" asp-page-handler="SignOut" style="display:inline;">
                         <button type="submit" class="nav-btn">

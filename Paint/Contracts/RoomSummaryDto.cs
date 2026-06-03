@@ -7,4 +7,5 @@ public sealed record RoomSummaryDto(
     int MaxUsers,
     int CanvasWidth,
     int CanvasHeight,
-    bool IsProtected);
+    bool IsProtected,
+    bool IsHidden = false);

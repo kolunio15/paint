@@ -9,6 +9,12 @@ public class ApplicationUser : IdentityUser
     public DateTime CreatedAt { get; set; }
     public DateTime? LastActiveAt { get; set; }
 
+    public bool IsBanned { get; set; }
+    public DateTime? BannedUntil { get; set; }
+    public string? BanReason { get; set; }
+    public string? LastKnownIp { get; set; }
+    public string? LastKnownDeviceToken { get; set; }
+
     public ICollection<Artwork> Artworks { get; set; } = [];
     public ICollection<Comment> Comments { get; set; } = [];
     public ICollection<Vote> Votes { get; set; } = [];

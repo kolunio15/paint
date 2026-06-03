@@ -1,0 +1,93 @@
+@page
+@model Paint.Pages.Admin.AdminIndexModel
+@{
+    ViewData["Title"] = "Admin Panel";
+}
+
+<main style="max-width: 960px; margin: 10px auto; padding: 0 10px;">
+    <div class="win-window">
+        <div class="gallery-titlebar">
+            <div class="titlebar-title" style="--titlebar-icon: url('/icons/key_padlock.ico')">
+                Admin Panel
+            </div>
+        </div>
+
+        <div style="padding: 16px; background: #ece9d8; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px;">
+            <div class="win-window-inset" style="padding: 12px; text-align: center;">
+                <div style="font-size: 24px; font-weight: bold;">@Model.TotalUsers</div>
+                <div style="font-size: 11px; color: #666;">Total Users</div>
+            </div>
+            <div class="win-window-inset" style="padding: 12px; text-align: center;">
+                <div style="font-size: 24px; font-weight: bold; color: #8b0000;">@Model.BannedUsers</div>
+                <div style="font-size: 11px; color: #666;">Banned</div>
+            </div>
+            <div class="win-window-inset" style="padding: 12px; text-align: center;">
+                <div style="font-size: 24px; font-weight: bold; color: #2a5c2a;">@Model.ModeratorsCount</div>
+                <div style="font-size: 11px; color: #666;">Moderators</div>
+            </div>
+            <div class="win-window-inset" style="padding: 12px; text-align: center;">
+                <div style="font-size: 24px; font-weight: bold; color: #8b4513;">@Model.PendingQueue</div>
+                <div style="font-size: 11px; color: #666;">Queue Pending</div>
+            </div>
+            <div class="win-window-inset" style="padding: 12px; text-align: center;">
+                <div style="font-size: 24px; font-weight: bold; color: #c0392b;">@Model.EscalatedQueue</div>
+                <div style="font-size: 11px; color: #666;">Escalated</div>
+            </div>
+            <div class="win-window-inset" style="padding: 12px; text-align: center;">
+                <div style="font-size: 24px; font-weight: bold; color: #000080;">@Model.ActionsLast24h</div>
+                <div style="font-size: 11px; color: #666;">Actions (24h)</div>
+            </div>
+        </div>
+
+        <div style="padding: 0 16px 12px; background: #ece9d8;">
+            <div style="font-size:11px; color:#666; margin-bottom:4px;">Hidden content:</div>
+            <div style="display:flex; gap:6px; flex-wrap:wrap; font-size:12px;">
+                <span class="win-window-inset" style="padding:3px 8px;">
+                    <img src="/icons/msagent.ico" width="12" height="12" style="image-rendering:pixelated; vertical-align:middle;"> @Model.HiddenArtworks artworks
+                </span>
+                <span class="win-window-inset" style="padding:3px 8px;">
+                    <img src="/icons/msagent.ico" width="12" height="12" style="image-rendering:pixelated; vertical-align:middle;"> @Model.HiddenRooms rooms
+                </span>
+                <span class="win-window-inset" style="padding:3px 8px;">
+                    <img src="/icons/msagent.ico" width="12" height="12" style="image-rendering:pixelated; vertical-align:middle;"> @Model.HiddenComments comments
+                </span>
+                @if (Model.ScheduledDeletions > 0)
+                {
+                    <span class="win-window-inset" style="padding:3px 8px; color:#8b0000;">
+                        <img src="/icons/recycle_bin_full.ico" width="12" height="12" style="image-rendering:pixelated; vertical-align:middle;"> @Model.ScheduledDeletions scheduled for deletion
+                    </span>
+                }
+            </div>
+        </div>
+
+        <div style="padding: 0 16px 16px; background: #ece9d8; display: flex; gap: 4px; flex-wrap: wrap;">
+            <a asp-page="/Admin/Users" class="toolbar-btn"><img src="/icons/address_book_users.ico" width="14" height="14" style="image-rendering:pixelated;"> Manage Users</a>
+            <a asp-page="/Admin/Content" class="toolbar-btn"><img src="/icons/directory_check.ico" width="14" height="14" style="image-rendering:pixelated;"> Content</a>
+            <a asp-page="/Moderation/Index" class="toolbar-btn"><img src="/icons/users_key.ico" width="14" height="14" style="image-rendering:pixelated;"> Mod Queue</a>
+            <a asp-page="/Admin/Actions" class="toolbar-btn"><img src="/icons/event_log.ico" width="14" height="14" style="image-rendering:pixelated;"> Audit Log</a>
+        </div>
+
+        @if (Model.EscalatedItems.Any())
+        {
+            <div style="padding: 0 16px 16px; background: #ece9d8;">
+                <h3 style="font-size: 13px; margin-bottom: 8px; color: #8b0000;">Escalated Items Awaiting Review</h3>
+                @foreach (var item in Model.EscalatedItems)
+                {
+                    <div class="win-window-inset" style="padding: 8px; margin-bottom: 6px; font-size: 12px; display: flex; justify-content: space-between; align-items: center;">
+                        <span>
+                            [@item.Type] — @item.CreatedAt.ToString("yyyy-MM-dd HH:mm")
+                            @if (item.TargetUser is not null) { <span>· User: <strong>@item.TargetUser.UserName</strong></span> }
+                            @if (item.TargetArtwork is not null) { <span>· Artwork: <strong>@item.TargetArtwork.Title</strong></span> }
+                            @if (item.TargetRoom is not null) { <span>· Room: <strong>@item.TargetRoom.Name</strong></span> }
+                        </span>
+                        <a asp-page="/Moderation/Index" asp-route-filter="escalated" class="toolbar-btn" style="font-size:11px;">Review</a>
+                    </div>
+                }
+            </div>
+        }
+
+        <div class="gallery-statusbar">
+            <span>Admin</span>
+        </div>
+    </div>
+</main>

@@ -1,0 +1,477 @@
+@page
+@model Paint.Pages.Moderation.ModerationIndexModel
+@{
+    ViewData["Title"] = "Moderation Queue";
+}
+
+<main style="max-width: 960px; margin: 10px auto; padding: 0 10px;">
+
+    <div class="explorer-toolbar">
+        <a asp-page="/Index" class="toolbar-btn">
+            <div class="back-arrow"></div>
+            Back
+        </a>
+        <div class="toolbar-separator"></div>
+        <span class="toolbar-address">
+            <img src="~/icons/users_key.ico" width="16" height="16" alt="" style="image-rendering:pixelated;object-fit:contain">
+            Moderation Queue
+        </span>
+    </div>
+
+    <div class="win-window">
+        <div class="gallery-titlebar">
+            <div class="titlebar-title" style="--titlebar-icon: url('/icons/key_padlock.ico')">
+                Moderation Queue
+            </div>
+        </div>
+
+        <div style="padding: 12px; background: #ece9d8;">
+
+            <div style="display:flex; gap:4px; margin-bottom:10px; flex-wrap:wrap;">
+                <a href="?filter=pending" class="toolbar-btn" style="@(Model.Filter == "pending" ? "border-top:1px solid #404040;border-left:1px solid #404040;border-bottom:1px solid #fff;border-right:1px solid #fff;" : "")">Pending (@Model.PendingCount)</a>
+                <a href="?filter=escalated" class="toolbar-btn" style="@(Model.Filter == "escalated" ? "border-top:1px solid #404040;border-left:1px solid #404040;border-bottom:1px solid #fff;border-right:1px solid #fff;" : "")">Escalated (@Model.EscalatedCount)</a>
+                <a href="?filter=all" class="toolbar-btn" style="@(Model.Filter == "all" ? "border-top:1px solid #404040;border-left:1px solid #404040;border-bottom:1px solid #fff;border-right:1px solid #fff;" : "")">All</a>
+                <a href="?filter=myactions" class="toolbar-btn" style="margin-left:auto; @(Model.Filter == "myactions" ? "border-top:1px solid #404040;border-left:1px solid #404040;border-bottom:1px solid #fff;border-right:1px solid #fff;" : "")">
+                    <img src="/icons/event_log.ico" width="14" height="14" style="image-rendering:pixelated; vertical-align:middle;"> My Actions
+                </a>
+            </div>
+
+            @if (Model.Filter == "myactions")
+            {
+                @if (!Model.MyActions.Any())
+                {
+                    <p style="font-size: 12px; color: #666;">No actions recorded yet.</p>
+                }
+                @foreach (var action in Model.MyActions)
+                {
+                    <div class="win-window-inset" style="margin-bottom:4px; padding:5px 8px; font-size:11px; display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                        <span style="flex:1;">
+                            <strong>@action.Type</strong>
+                            @if (action.TargetArtworkId.HasValue) { <span> — Artwork #@action.TargetArtworkId</span> }
+                            @if (action.TargetCommentId.HasValue) { <span> — Comment #@action.TargetCommentId</span> }
+                            @if (action.TargetRoomId.HasValue) { <span> — Room #@action.TargetRoomId</span> }
+                            @if (action.TargetUserId is not null) { <span> — <strong>@(action.TargetUser?.UserName ?? action.TargetUserId)</strong></span> }
+                            @if (!string.IsNullOrWhiteSpace(action.Reason)) { <span style="color:#444;"> — <em>@action.Reason</em></span> }
+                            @if (action.ExpiresAt.HasValue) { <span style="color:#8b4513;"> (until @action.ExpiresAt.Value.ToString("yyyy-MM-dd HH:mm"))</span> }
+                        </span>
+                        <span style="display:flex; align-items:center; gap:4px; flex-shrink:0;">
+                            @if ((action.Type == ModerationActionType.TempBan || action.Type == ModerationActionType.PermBan) && action.TargetUserId is not null)
+                            {
+                                <form method="post" asp-page-handler="UnbanFromActions">
+                                    <input type="hidden" name="userId" value="@action.TargetUserId" />
+                                    <button type="submit" class="mod-bar-btn mod-bar-btn-ok" title="Unban this user">
+                                        <img src="/icons/file_eye.ico" width="12" height="12" style="image-rendering:pixelated;"> Unban
+                                    </button>
+                                </form>
+                            }
+                            @if (action.Type == ModerationActionType.HideArtwork && action.TargetArtworkId.HasValue)
+                            {
+                                <form method="post" asp-page-handler="UnhideArtworkDirect">
+                                    <input type="hidden" name="artworkId" value="@action.TargetArtworkId" />
+                                    <button type="submit" class="mod-bar-btn mod-bar-btn-ok" title="Unhide artwork">
+                                        <img src="/icons/file_eye.ico" width="12" height="12" style="image-rendering:pixelated;"> Unhide
+                                    </button>
+                                </form>
+                            }
+                            @if (action.Type == ModerationActionType.HideComment && action.TargetCommentId.HasValue)
+                            {
+                                <form method="post" asp-page-handler="UnhideCommentDirect">
+                                    <input type="hidden" name="commentId" value="@action.TargetCommentId" />
+                                    <button type="submit" class="mod-bar-btn mod-bar-btn-ok" title="Unhide comment">
+                                        <img src="/icons/file_eye.ico" width="12" height="12" style="image-rendering:pixelated;"> Unhide
+                                    </button>
+                                </form>
+                            }
+                            @if (action.Type == ModerationActionType.HideRoom && action.TargetRoomId.HasValue)
+                            {
+                                <form method="post" asp-page-handler="UnhideRoomDirect">
+                                    <input type="hidden" name="roomId" value="@action.TargetRoomId" />
+                                    <button type="submit" class="mod-bar-btn mod-bar-btn-ok" title="Unhide room">
+                                        <img src="/icons/file_eye.ico" width="12" height="12" style="image-rendering:pixelated;"> Unhide
+                                    </button>
+                                </form>
+                            }
+                            <span style="color:#808080; white-space:nowrap;">@action.CreatedAt.ToString("yyyy-MM-dd HH:mm")</span>
+                        </span>
+                    </div>
+                }
+            }
+            else
+            {
+
+            @if (!Model.Items.Any())
+            {
+                <p style="font-size: 12px; color: #666;">Queue is empty.</p>
+            }
+
+            @foreach (var item in Model.Items)
+            {
+                <div class="win-window-inset" style="margin-bottom: 8px; padding: 8px; font-size: 12px;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
+                        <div>
+                            <strong>[@item.Type] @item.Status</strong>
+                            &mdash; @item.CreatedAt.ToString("yyyy-MM-dd HH:mm")
+                            @if (item.ReportedBy is not null)
+                            {
+                                <span> &mdash; reported by <strong>@item.ReportedBy.UserName</strong></span>
+                            }
+                            <br />
+                            @if (item.TargetUser is not null)
+                            {
+                                <span>User: <strong>@item.TargetUser.UserName</strong></span>
+                            }
+                            @if (item.TargetArtwork is not null)
+                            {
+                                <span>Artwork: <strong>@item.TargetArtwork.Title</strong></span>
+                                @if (item.Type == QueueItemType.ArtworkPublished)
+                                {
+                                    <br />
+                                    <a href="/Artwork/@item.TargetArtworkId" target="_blank">
+                                        <img src="@item.TargetArtwork.ImageUrl" alt="@item.TargetArtwork.Title"
+                                             style="width:200px; height:150px; object-fit:contain; border:1px solid #808080; background:#fff; margin-top:4px; display:block;" />
+                                    </a>
+                                }
+                            }
+                            @if (item.TargetComment is not null)
+                            {
+                                <span>Comment: <a href="/Artwork/@item.TargetComment.ArtworkId" target="_blank" style="color:inherit;"><em>@item.TargetComment.Content.Substring(0, Math.Min(80, item.TargetComment.Content.Length))@(item.TargetComment.Content.Length > 80 ? "…" : "")</em></a></span>
+                            }
+                            @if (item.TargetRoom is not null)
+                            {
+                                <span>Room: <strong>@item.TargetRoom.Name</strong></span>
+                                @if (item.Type == QueueItemType.RoomCreated)
+                                {
+                                    <br />
+                                    <div style="margin-top:4px; padding:4px 6px; background:#d4d0c8; border:1px solid #b0b0b0; font-size:11px; display:inline-block;">
+                                        <img src="/icons/paint_file.ico" width="12" height="12" style="image-rendering:pixelated; vertical-align:middle;"> Canvas: @item.TargetRoom.CanvasWidth × @item.TargetRoom.CanvasHeight<br />
+                                        <img src="/icons/users_green.ico" width="12" height="12" style="image-rendering:pixelated; vertical-align:middle;"> Max: @item.TargetRoom.MaxUsers users<br />
+                                        @if (item.TargetRoom.IsProtected)
+                                        {
+                                            <img src="/icons/key_padlock.ico" width="12" height="12" style="image-rendering:pixelated; vertical-align:middle;"> <span style="color:#8b4513;">Password protected</span>
+                                        }
+                                        else
+                                        {
+                                            <span style="color:#555;">Public</span>
+                                        }
+                                    </div>
+                                }
+                            }
+                            @if (!string.IsNullOrWhiteSpace(item.ReportReason))
+                            {
+                                <br /><span style="color:#444;">Reason: @item.ReportReason</span>
+                            }
+                        </div>
+
+                        @{
+                            var anyActionTaken = item.TargetArtwork?.IsHidden == true
+                                              || item.TargetComment?.IsHidden == true
+                                              || item.TargetRoom?.IsHidden == true;
+                            var banTargetId = item.TargetUserId
+                                          ?? item.TargetArtwork?.AuthorId
+                                          ?? item.TargetComment?.AuthorId
+                                          ?? item.TargetRoom?.OwnerId;
+                            var banTargetName = item.TargetUser?.UserName
+                                            ?? item.TargetArtwork?.Author?.UserName
+                                            ?? item.TargetComment?.Author?.UserName
+                                            ?? item.TargetRoom?.Owner?.UserName
+                                            ?? banTargetId;
+                        }
+                        @if (item.Status == QueueItemStatus.Pending || item.Status == QueueItemStatus.Escalated)
+                        {
+                            <div style="display:flex; flex-direction:column; gap:3px; min-width:130px; align-self:flex-start;">
+                                <form method="post" asp-page-handler="ReviewOk">
+                                    <input type="hidden" name="itemId" value="@item.Id" />
+                                    <button type="submit" class="mod-bar-btn @(anyActionTaken ? "mod-bar-btn-ok" : "")" style="width:100%; display:flex; align-items:center; gap:4px; justify-content:center;">
+                                        <img src="/icons/check.ico" width="14" height="14" style="image-rendering:pixelated; flex-shrink:0;">@(anyActionTaken ? "Done" : "Mark OK")
+                                    </button>
+                                </form>
+
+                                @if (item.TargetArtworkId.HasValue)
+                                {
+                                    @if (item.TargetArtwork?.IsHidden == true)
+                                    {
+                                        <form method="post" asp-page-handler="UnhideArtwork">
+                                            <input type="hidden" name="itemId" value="@item.Id" />
+                                            <input type="hidden" name="artworkId" value="@item.TargetArtworkId" />
+                                            <button type="submit" class="mod-bar-btn mod-bar-btn-ok" style="width:100%; display:flex; align-items:center; gap:4px; justify-content:center;">
+                                                <img src="/icons/file_eye.ico" width="14" height="14" style="image-rendering:pixelated; flex-shrink:0;">Unhide Artwork
+                                            </button>
+                                        </form>
+                                    }
+                                    else
+                                    {
+                                        <button class="mod-bar-btn mod-bar-btn-danger" style="width:100%; display:flex; align-items:center; gap:4px; justify-content:center;"
+                                                onclick="openHideModal(@item.Id, 'artwork', @item.TargetArtworkId, 'Artwork')">
+                                            <img src="/icons/msagent.ico" width="14" height="14" style="image-rendering:pixelated; flex-shrink:0;">Hide Artwork
+                                        </button>
+                                    }
+                                }
+                                @if (item.TargetCommentId.HasValue)
+                                {
+                                    @if (item.TargetComment?.IsHidden == true)
+                                    {
+                                        <form method="post" asp-page-handler="UnhideComment">
+                                            <input type="hidden" name="itemId" value="@item.Id" />
+                                            <input type="hidden" name="commentId" value="@item.TargetCommentId" />
+                                            <button type="submit" class="mod-bar-btn mod-bar-btn-ok" style="width:100%; display:flex; align-items:center; gap:4px; justify-content:center;">
+                                                <img src="/icons/file_eye.ico" width="14" height="14" style="image-rendering:pixelated; flex-shrink:0;">Unhide Comment
+                                            </button>
+                                        </form>
+                                    }
+                                    else
+                                    {
+                                        <button class="mod-bar-btn mod-bar-btn-danger" style="width:100%; display:flex; align-items:center; gap:4px; justify-content:center;"
+                                                onclick="openHideModal(@item.Id, 'comment', @item.TargetCommentId, 'Comment')">
+                                            <img src="/icons/msagent.ico" width="14" height="14" style="image-rendering:pixelated; flex-shrink:0;">Hide Comment
+                                        </button>
+                                    }
+                                }
+                                @if (item.TargetRoomId.HasValue)
+                                {
+                                    @if (item.TargetRoom?.IsHidden == true)
+                                    {
+                                        <form method="post" asp-page-handler="UnhideRoom">
+                                            <input type="hidden" name="itemId" value="@item.Id" />
+                                            <input type="hidden" name="roomId" value="@item.TargetRoomId" />
+                                            <button type="submit" class="mod-bar-btn mod-bar-btn-ok" style="width:100%; display:flex; align-items:center; gap:4px; justify-content:center;">
+                                                <img src="/icons/file_eye.ico" width="14" height="14" style="image-rendering:pixelated; flex-shrink:0;">Unhide Room
+                                            </button>
+                                        </form>
+                                    }
+                                    else
+                                    {
+                                        <button class="mod-bar-btn mod-bar-btn-danger" style="width:100%; display:flex; align-items:center; gap:4px; justify-content:center;"
+                                                onclick="openHideModal(@item.Id, 'room', @item.TargetRoomId, 'Room')">
+                                            <img src="/icons/msagent.ico" width="14" height="14" style="image-rendering:pixelated; flex-shrink:0;">Hide Room
+                                        </button>
+                                    }
+                                }
+                                @if (banTargetId is not null && item.Status != QueueItemStatus.Escalated && item.Type != QueueItemType.UserRegistered)
+                                {
+                                    <div style="display:flex; flex-direction:column; gap:2px;">
+                                        <select id="hours-@item.Id" class="win-window-inset" style="font-size:11px; padding:1px 2px; font-family:inherit;">
+                                            <option value="1">1 hour</option>
+                                            <option value="24" selected>24 hours</option>
+                                            <option value="168">7 days</option>
+                                        </select>
+                                        <button class="mod-bar-btn mod-bar-btn-danger" style="width:100%; display:flex; align-items:center; gap:4px; justify-content:center;"
+                                                onclick="openTempBanModal(@item.Id, '@Html.Raw(banTargetId)', '@Html.Raw((banTargetName ?? banTargetId)!.Replace("'", "\\'"))')">
+                                            <img src="/icons/clock.ico" width="14" height="14" style="image-rendering:pixelated; flex-shrink:0;">Temp Ban
+                                        </button>
+                                    </div>
+                                }
+
+                                @if (item.Status != QueueItemStatus.Escalated)
+                                {
+                                    <div style="margin-top:2px; padding-top:3px; border-top:1px solid #b0b0b0;">
+                                        <button class="mod-bar-btn" style="width:100%; color:#8b0000; display:flex; align-items:center; gap:4px; justify-content:center;"
+                                                onclick="openEscalateModal(@item.Id)">
+                                            <img src="/icons/msg_error.ico" width="14" height="14" style="image-rendering:pixelated; flex-shrink:0;">Escalate
+                                        </button>
+                                    </div>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <div style="font-size: 11px; color: #666;">
+                                @if (item.Status == QueueItemStatus.AdminResolved)
+                                {
+                                    <span style="color:#2a5c2a; font-weight:bold;">Admin resolved</span>
+                                }
+                                else
+                                {
+                                    <span>Reviewed OK</span>
+                                }
+                                by @item.ReviewedBy?.UserName at @item.ReviewedAt?.ToString("yyyy-MM-dd HH:mm")
+                                @if (!string.IsNullOrWhiteSpace(item.ReviewNote))
+                                {
+                                    <br /><em>@item.ReviewNote</em>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+            } @* end else (not myactions) *@
+        </div>
+
+        <div class="gallery-statusbar">
+            <span>
+                @if (Model.Filter == "myactions") { @Model.MyActions.Count } else { @Model.Items.Count } items
+            </span>
+        </div>
+    </div>
+</main>
+
+<div id="hideReasonOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.3); z-index:1000; align-items:center; justify-content:center;">
+    <div class="win-window" style="width:340px; box-shadow:4px 4px 0 #000;">
+        <div class="gallery-titlebar">
+            <div class="titlebar-title" id="hideModalTitle" style="--titlebar-icon:url('/icons/msagent.ico')">Hide Content</div>
+            <div class="gallery-titlebar-buttons">
+                <div class="titlebar-btn" onclick="closeHideModal()">✕</div>
+            </div>
+        </div>
+        <div style="padding:12px 16px; background:#ece9d8;">
+            <p style="margin:0 0 8px; font-size:12px;">Reason for hiding (optional):</p>
+            <input id="hideReasonInput" type="text" class="win-window-inset"
+                   style="width:100%; padding:2px 4px; font-size:12px; font-family:inherit;"
+                   placeholder="e.g. inappropriate content, spam"
+                   onkeydown="if(event.key==='Enter') confirmHide()" />
+        </div>
+        <div style="padding:6px 16px 10px; background:#ece9d8; display:flex; justify-content:flex-end; gap:6px; border-top:1px solid #808080;">
+            <button class="comment-submit" style="color:#8b0000;" onclick="confirmHide()">Hide</button>
+            <button class="toolbar-btn" style="justify-content:center; min-width:64px;" onclick="closeHideModal()">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<form id="hideForm" method="post" style="display:none;">
+    <input type="hidden" name="itemId" id="hideItemId" />
+    <input type="hidden" name="artworkId" id="hideArtworkId" />
+    <input type="hidden" name="commentId" id="hideCommentId" />
+    <input type="hidden" name="roomId" id="hideRoomId" />
+    <input type="hidden" name="reason" id="hideReasonHidden" />
+</form>
+
+<div id="tempBanOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.3); z-index:1000; align-items:center; justify-content:center;">
+    <div class="win-window" style="width:320px; box-shadow:4px 4px 0 #000;">
+        <div class="gallery-titlebar">
+            <div class="titlebar-title" style="--titlebar-icon:url('/icons/restrict.ico')">Confirm Temp Ban</div>
+            <div class="gallery-titlebar-buttons">
+                <div class="titlebar-btn" onclick="closeTempBanModal()">✕</div>
+            </div>
+        </div>
+        <div style="padding:12px 16px; background:#ece9d8;">
+            <div style="display:flex; gap:10px; align-items:flex-start; margin-bottom:10px;">
+                <img src="/icons/clock.ico" width="32" height="32" style="image-rendering:pixelated; flex-shrink:0;">
+                <p id="tempBanMessage" style="margin:0; font-size:12px;"></p>
+            </div>
+            <label style="font-size:12px; display:block; margin-bottom:4px;">Reason (optional):</label>
+            <input id="tempBanReasonInput" type="text" class="win-window-inset"
+                   style="width:100%; padding:2px 4px; font-size:12px; font-family:inherit;"
+                   placeholder="e.g. spam, inappropriate content"
+                   onkeydown="if(event.key==='Enter') confirmTempBan()" />
+        </div>
+        <div style="padding:6px 16px 10px; background:#ece9d8; display:flex; justify-content:flex-end; gap:6px; border-top:1px solid #808080;">
+            <button class="comment-submit" style="color:#8b0000;" onclick="confirmTempBan()">Ban</button>
+            <button class="toolbar-btn" style="justify-content:center; min-width:64px;" onclick="closeTempBanModal()">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<form id="tempBanForm" method="post" asp-page-handler="TempBan" style="display:none;">
+    <input type="hidden" name="itemId" id="tbItemId" />
+    <input type="hidden" name="userId" id="tbUserId" />
+    <input type="hidden" name="hours" id="tbHours" />
+    <input type="hidden" name="reason" id="tbReason" />
+</form>
+
+<div id="escalateOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.3); z-index:1000; align-items:center; justify-content:center;">
+    <div class="win-window" style="width:340px; box-shadow:4px 4px 0 #000;">
+        <div class="gallery-titlebar">
+            <div class="titlebar-title" style="--titlebar-icon:url('/icons/msg_error.ico')">Escalate to Admin</div>
+            <div class="gallery-titlebar-buttons">
+                <div class="titlebar-btn" onclick="closeEscalateModal()">✕</div>
+            </div>
+        </div>
+        <div style="padding:12px 16px; background:#ece9d8;">
+            <p style="margin:0 0 8px; font-size:12px;">Add a note for the admin (optional):</p>
+            <input id="escalateNoteInput" type="text" class="win-window-inset"
+                   style="width:100%; padding:2px 4px; font-size:12px; font-family:inherit;"
+                   placeholder="e.g. borderline case, needs second opinion"
+                   onkeydown="if(event.key==='Enter') confirmEscalate()" />
+        </div>
+        <div style="padding:6px 16px 10px; background:#ece9d8; display:flex; justify-content:flex-end; gap:6px; border-top:1px solid #808080;">
+            <button class="comment-submit" style="color:#8b0000;" onclick="confirmEscalate()">Escalate</button>
+            <button class="toolbar-btn" style="justify-content:center; min-width:64px;" onclick="closeEscalateModal()">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<form id="escalateForm" method="post" asp-page-handler="Escalate" style="display:none;">
+    <input type="hidden" name="itemId" id="escalateItemId" />
+    <input type="hidden" name="note" id="escalateNoteHidden" />
+</form>
+
+<script>
+/* ===== Hide with reason ===== */
+let _hideType = null;
+
+function openHideModal(itemId, type, targetId, label) {
+    _hideType = type;
+    document.getElementById('hideItemId').value = itemId;
+    document.getElementById('hideArtworkId').value = type === 'artwork' ? targetId : '';
+    document.getElementById('hideCommentId').value = type === 'comment' ? targetId : '';
+    document.getElementById('hideRoomId').value = type === 'room' ? targetId : '';
+    document.getElementById('hideReasonInput').value = '';
+    document.getElementById('hideModalTitle').textContent = `Hide ${label}`;
+    document.getElementById('hideReasonOverlay').style.display = 'flex';
+    setTimeout(() => document.getElementById('hideReasonInput').focus(), 50);
+}
+
+function closeHideModal() {
+    document.getElementById('hideReasonOverlay').style.display = 'none';
+}
+
+function confirmHide() {
+    const handlerMap = { artwork: 'HideArtwork', comment: 'HideComment', room: 'HideRoom' };
+    document.getElementById('hideReasonHidden').value = document.getElementById('hideReasonInput').value;
+    const form = document.getElementById('hideForm');
+    form.action = form.action.split('?')[0] + `?handler=${handlerMap[_hideType]}`;
+    form.submit();
+}
+
+/* ===== TempBan confirmation ===== */
+const durationLabels = { 1: '1 hour', 24: '24 hours', 168: '7 days' };
+
+function openTempBanModal(itemId, userId, username) {
+    const hours = parseInt(document.getElementById('hours-' + itemId).value);
+    document.getElementById('tbItemId').value = itemId;
+    document.getElementById('tbUserId').value = userId;
+    document.getElementById('tbHours').value = hours;
+    document.getElementById('tempBanReasonInput').value = '';
+    document.getElementById('tempBanMessage').textContent =
+        `Ban "${username}" for ${durationLabels[hours] || hours + ' hours'}?`;
+    document.getElementById('tempBanOverlay').style.display = 'flex';
+    setTimeout(() => document.getElementById('tempBanReasonInput').focus(), 50);
+}
+
+function closeTempBanModal() {
+    document.getElementById('tempBanOverlay').style.display = 'none';
+}
+
+function confirmTempBan() {
+    document.getElementById('tbReason').value = document.getElementById('tempBanReasonInput').value;
+    document.getElementById('tempBanForm').submit();
+}
+
+/* ===== Escalate ===== */
+let _escalateItemId = null;
+
+function openEscalateModal(itemId) {
+    _escalateItemId = itemId;
+    document.getElementById('escalateNoteInput').value = '';
+    document.getElementById('escalateOverlay').style.display = 'flex';
+    setTimeout(() => document.getElementById('escalateNoteInput').focus(), 50);
+}
+
+function closeEscalateModal() {
+    document.getElementById('escalateOverlay').style.display = 'none';
+    _escalateItemId = null;
+}
+
+function confirmEscalate() {
+    document.getElementById('escalateItemId').value = _escalateItemId;
+    document.getElementById('escalateNoteHidden').value = document.getElementById('escalateNoteInput').value;
+    document.getElementById('escalateForm').submit();
+}
+
+document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+        closeEscalateModal();
+        closeHideModal();
+        closeTempBanModal();
+    }
+});
+</script>

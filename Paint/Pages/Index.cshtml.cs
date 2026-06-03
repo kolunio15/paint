@@ -17,6 +17,7 @@ public class IndexModel : PageModel
 
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
-        Artworks = await _artworks.GetArtworksAsync(null, 20, cancellationToken);
+        var includeHidden = User.IsInRole("Admin") || User.IsInRole("Moderator");
+        Artworks = await _artworks.GetArtworksAsync(null, 20, includeHidden, cancellationToken);
     }
 }

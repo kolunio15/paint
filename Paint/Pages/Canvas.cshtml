@@ -4,9 +4,9 @@
 }
 
 @section Style {
-    <link rel="stylesheet" href="@Url.Content("~/css/canvas.css")" />
+    <link rel="stylesheet" href="~/css/canvas.css" asp-append-version="true" />
 }
-<script type="module" src="@Url.Content("~/js/canvas.js")" defer></script>
+<script type="module" src="~/js/canvas.js" asp-append-version="true" defer></script>
 
 <div class="paint-app">
     <div class="menu-bar">
@@ -62,7 +62,14 @@
 <div class="chat-container">
     <div class="chat-header" onclick="toggleChat()">
         <span>Room Chat</span>
-        <span>▲</span>
+        <span style="display:flex; align-items:center; gap:6px;">
+            @if (User.Identity?.IsAuthenticated == true && !User.IsInRole("Admin") && !User.IsInRole("Moderator"))
+            {
+                <button class="mod-flag-btn" title="Report this room" style="color:#808080;"
+                        onclick="event.stopPropagation(); openRoomReportModal()">⚑</button>
+            }
+            <span>▲</span>
+        </span>
     </div>
     <div class="chat-body" id="chatBody">
         <div class="chat-messages" id="chatMessages">
@@ -113,6 +120,22 @@
             </table>
             <div style="display:flex;justify-content:flex-end;margin-top:12px">
                 <button class="comment-submit" onclick="hideOverlay('shortcutsOverlay')">OK</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="confirmOverlay" class="win-overlay" style="display:none">
+    <div class="win-window" style="width:340px;box-shadow:4px 4px 0 #000">
+        <div class="gallery-titlebar">
+            <div class="titlebar-title" id="confirmTitle" style="--titlebar-icon:url('/icons/paint_file.ico')">Confirm</div>
+            <div class="gallery-titlebar-buttons"><div class="titlebar-btn" onclick="hideOverlay('confirmOverlay')">✕</div></div>
+        </div>
+        <div style="padding:16px;background:#ece9d8">
+            <div id="confirmMessage" style="font-size:13px;margin-bottom:14px;line-height:1.4"></div>
+            <div class="btn-row">
+                <button class="comment-submit" id="confirmOkBtn">OK</button>
+                <button class="toolbar-btn" style="justify-content:center;min-width:64px" onclick="hideOverlay('confirmOverlay')">Cancel</button>
             </div>
         </div>
     </div>
@@ -322,10 +345,23 @@ document.addEventListener('keydown', (e) => {
 
 /* ========== FILE MENU ACTIONS ========== */
 function menuNew() {
-    const c = document.getElementById('paintCanvas');
-    c.getContext('2d').fillStyle = '#ffffff';
-    c.getContext('2d').fillRect(0, 0, c.width, c.height);
-    setStatus('Canvas cleared.');
+    closeMenus();
+    showConfirm('Start a new canvas? This clears the canvas for everyone in this room.', async () => {
+        const roomId = new URLSearchParams(window.location.search).get('roomId');
+        try {
+            const res = await fetch(`/api/rooms/${roomId}/clear`, { method: 'POST' });
+            if (!res.ok) { setStatus('Failed to clear canvas.'); return; }
+            // The server broadcasts a `clear` message that resets the live canvas state
+            // in canvas.js; wipe the visible bitmap immediately for instant feedback.
+            const c = document.getElementById('paintCanvas');
+            const cc = c.getContext('2d');
+            cc.fillStyle = '#ffffff';
+            cc.fillRect(0, 0, c.width, c.height);
+            setStatus('New canvas.');
+        } catch (e) {
+            setStatus('Failed to clear canvas.');
+        }
+    }, 'New Canvas');
 }
 
 function menuSave() {
@@ -483,6 +519,13 @@ function showOverlay(id) {
 function hideOverlay(id) {
     document.getElementById(id).style.display = 'none';
 }
+function showConfirm(message, onConfirm, title) {
+    document.getElementById('confirmMessage').textContent = message;
+    document.getElementById('confirmTitle').textContent = title || 'Confirm';
+    const okBtn = document.getElementById('confirmOkBtn');
+    okBtn.onclick = () => { hideOverlay('confirmOverlay'); onConfirm(); };
+    showOverlay('confirmOverlay');
+}
 function setStatus(msg) {
     const el = document.getElementById('statusBar');
     if (el) el.textContent = msg;
@@ -491,4 +534,51 @@ function setStatus(msg) {
 document.querySelectorAll('.win-overlay').forEach(el => {
     el.addEventListener('click', (e) => { if (e.target === el) el.style.display = 'none'; });
 });
+
+/* ===== Room report ===== */
+const _canvasRoomId = new URLSearchParams(window.location.search).get('roomId');
+
+function openRoomReportModal() {
+    document.getElementById('roomReportInput').value = '';
+    document.getElementById('roomReportOverlay').style.display = 'flex';
+    setTimeout(() => document.getElementById('roomReportInput').focus(), 50);
+}
+
+function closeRoomReportModal() {
+    document.getElementById('roomReportOverlay').style.display = 'none';
+}
+
+async function submitRoomReport() {
+    const reason = document.getElementById('roomReportInput').value.trim() || null;
+    await fetch('/api/moderation/report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetRoomId: parseInt(_canvasRoomId), reason })
+    });
+    closeRoomReportModal();
+}
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeRoomReportModal(); });
 </script>
+
+<div id="roomReportOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.3); z-index:2000; align-items:center; justify-content:center;">
+    <div class="win-window" style="width:320px; box-shadow:4px 4px 0 #000;">
+        <div class="gallery-titlebar">
+            <div class="titlebar-title" style="--titlebar-icon:url('/icons/msg_warning.ico')">Report Room</div>
+            <div class="gallery-titlebar-buttons">
+                <div class="titlebar-btn" onclick="closeRoomReportModal()">✕</div>
+            </div>
+        </div>
+        <div style="padding:12px 16px; background:#ece9d8;">
+            <p style="margin:0 0 8px; font-size:12px;">Describe the issue (optional):</p>
+            <input id="roomReportInput" type="text" class="win-window-inset"
+                   style="width:100%; padding:2px 4px; font-size:12px; font-family:inherit;"
+                   placeholder="e.g. inappropriate content"
+                   onkeydown="if(event.key==='Enter') submitRoomReport()" />
+        </div>
+        <div style="padding:6px 16px 10px; background:#ece9d8; display:flex; justify-content:flex-end; gap:6px; border-top:1px solid #808080;">
+            <button class="comment-submit" onclick="submitRoomReport()">Report</button>
+            <button class="toolbar-btn" style="justify-content:center; min-width:64px;" onclick="closeRoomReportModal()">Cancel</button>
+        </div>
+    </div>
+</div>

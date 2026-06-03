@@ -15,6 +15,9 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<Vote> Votes { get; set; }
     public DbSet<RoomParticipant> RoomParticipants { get; set; }
     public DbSet<CanvasEvent> CanvasEvents { get; set; }
+    public DbSet<ModerationQueueItem> ModerationQueue { get; set; }
+    public DbSet<ModerationAction> ModerationActions { get; set; }
+    public DbSet<BannedIdentifier> BannedIdentifiers { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {

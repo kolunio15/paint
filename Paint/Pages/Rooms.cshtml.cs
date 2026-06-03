@@ -20,7 +20,8 @@ public class RoomsModel : PageModel
 
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
-        var rooms = await _rooms.GetRoomsAsync(_roomConnections.GetActiveUserCounts(), cancellationToken);
+        var includeHidden = User.IsInRole("Admin") || User.IsInRole("Moderator");
+        var rooms = await _rooms.GetRoomsAsync(_roomConnections.GetActiveUserCounts(), includeHidden, cancellationToken);
         ActiveRooms = rooms.ToList();
     }
 }

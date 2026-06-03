@@ -124,6 +124,84 @@ public class RoomConnections
         return await rooms.GetRoomEventsAsync(databaseRoomId, startId, endId, cancellationToken);
     }
 
+    private async Task<(string? Path, int GlobalId)> LoadRoomSnapshotAsync(
+        string roomId,
+        CancellationToken cancellationToken)
+    {
+        if (!int.TryParse(roomId, out var databaseRoomId))
+        {
+            return (null, -1);
+        }
+
+        using var scope = _scopeFactory.CreateScope();
+        var rooms = scope.ServiceProvider.GetRequiredService<IRoomRepository>();
+        return await rooms.GetRoomSnapshotAsync(databaseRoomId, cancellationToken);
+    }
+
+    private async Task<bool> ApplySnapshotInternalAsync(
+        string roomId,
+        string path,
+        int globalId,
+        CancellationToken cancellationToken)
+    {
+        if (!int.TryParse(roomId, out var databaseRoomId))
+        {
+            return false;
+        }
+
+        using var scope = _scopeFactory.CreateScope();
+        var rooms = scope.ServiceProvider.GetRequiredService<IRoomRepository>();
+        return await rooms.ApplySnapshotAsync(databaseRoomId, path, globalId, cancellationToken);
+    }
+
+    private async Task<string?> ClearRoomInternalAsync(
+        string roomId,
+        CancellationToken cancellationToken)
+    {
+        if (!int.TryParse(roomId, out var databaseRoomId))
+        {
+            return null;
+        }
+
+        using var scope = _scopeFactory.CreateScope();
+        var rooms = scope.ServiceProvider.GetRequiredService<IRoomRepository>();
+        return await rooms.ClearRoomEventsAsync(databaseRoomId, cancellationToken);
+    }
+
+    // Public entry points used by HTTP endpoints. They route through the room's
+    // message actor when the room is active so snapshot/clear are serialized with
+    // event saves (consistent globalId accounting); otherwise they run directly.
+    public async Task<bool> ApplySnapshotAsync(
+        string roomId,
+        string snapshotPath,
+        int globalId,
+        CancellationToken cancellationToken = default)
+    {
+        if (_activeRooms.TryGetValue(roomId, out var room))
+        {
+            var done = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            await room.Post(new ApplySnapshot(snapshotPath, globalId, done));
+            return await done.Task;
+        }
+
+        return await ApplySnapshotInternalAsync(roomId, snapshotPath, globalId, cancellationToken);
+    }
+
+    public async Task<bool> ClearRoomAsync(
+        string roomId,
+        CancellationToken cancellationToken = default)
+    {
+        if (_activeRooms.TryGetValue(roomId, out var room))
+        {
+            var done = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            await room.Post(new ClearCanvas(done));
+            return await done.Task;
+        }
+
+        await ClearRoomInternalAsync(roomId, cancellationToken);
+        return true;
+    }
+
     private void RemoveRoomIfSame(string roomId, ActiveRoom room)
     {
         if (_activeRooms.TryGetValue(roomId, out var currentRoom) && ReferenceEquals(currentRoom, room))
@@ -220,6 +298,8 @@ public class RoomConnections
     private sealed record GetEvents(WebSocket Connection, int StartId, int? EndId) : Message;
     private sealed record Broadcast(string Content) : Message;
     private sealed record ProtocolError(WebSocket Connection, string Text) : Message;
+    private sealed record ApplySnapshot(string Path, int GlobalId, TaskCompletionSource<bool> Done) : Message;
+    private sealed record ClearCanvas(TaskCompletionSource<bool> Done) : Message;
 
     private sealed class ActiveRoom
     {
@@ -277,6 +357,12 @@ public class RoomConnections
                     case ProtocolError(var connection, var text):
                         await SendTextAsync(connection, $"error {text}", CancellationToken.None);
                         break;
+                    case ApplySnapshot(var path, var globalId, var done):
+                        await HandleApplySnapshotAsync(path, globalId, done);
+                        break;
+                    case ClearCanvas(var done):
+                        await HandleClearCanvasAsync(done);
+                        break;
                 }
             }
         }
@@ -293,6 +379,19 @@ public class RoomConnections
 
             var assigned = await SendTextAsync(socket, $"assigned_id {connectionId}", CancellationToken.None);
             var sized = assigned && await SendTextAsync(socket, $"canvas_size {canvasWidth} {canvasHeight}", CancellationToken.None);
+
+            // Always tell the client the compaction baseline so it can rebuild the
+            // canvas from the snapshot image (if any) and then request only the
+            // events that came after it. "-" means there is no snapshot image yet.
+            if (sized)
+            {
+                var (snapshotPath, snapshotGlobalId) = await _roomConnections.LoadRoomSnapshotAsync(_roomId, CancellationToken.None);
+                var url = string.IsNullOrEmpty(snapshotPath)
+                    ? "-"
+                    : $"{snapshotPath}?v={snapshotGlobalId}";
+                sized = await SendTextAsync(socket, $"snapshot {snapshotGlobalId} {url}", CancellationToken.None);
+            }
+
             if (!sized)
             {
                 _connectedSockets.Remove(socket);
@@ -370,6 +469,38 @@ public class RoomConnections
                     "Could not load canvas events: room={RoomId}",
                     _roomId);
                 await SendTextAsync(connection, "error event load failed", CancellationToken.None);
+            }
+        }
+
+        private async Task HandleApplySnapshotAsync(string path, int globalId, TaskCompletionSource<bool> done)
+        {
+            try
+            {
+                var applied = await _roomConnections.ApplySnapshotInternalAsync(
+                    _roomId, path, globalId, CancellationToken.None);
+                done.TrySetResult(applied);
+            }
+            catch (Exception exception)
+            {
+                _roomConnections._logger.LogWarning(
+                    exception, "Could not apply snapshot: room={RoomId}", _roomId);
+                done.TrySetResult(false);
+            }
+        }
+
+        private async Task HandleClearCanvasAsync(TaskCompletionSource<bool> done)
+        {
+            try
+            {
+                await _roomConnections.ClearRoomInternalAsync(_roomId, CancellationToken.None);
+                await BroadcastAsync("clear");
+                done.TrySetResult(true);
+            }
+            catch (Exception exception)
+            {
+                _roomConnections._logger.LogWarning(
+                    exception, "Could not clear room: room={RoomId}", _roomId);
+                done.TrySetResult(false);
             }
         }
 

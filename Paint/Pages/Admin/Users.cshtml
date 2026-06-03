@@ -1,0 +1,241 @@
+@page
+@model Paint.Pages.Admin.AdminUsersModel
+@{
+    ViewData["Title"] = "User Management";
+}
+
+<main style="max-width: 960px; margin: 10px auto; padding: 0 10px;">
+
+    <div class="explorer-toolbar">
+        <a asp-page="/Admin/Index" class="toolbar-btn">
+            <div class="back-arrow"></div>
+            Back
+        </a>
+        <div class="toolbar-separator"></div>
+        <span class="toolbar-address">
+            <img src="~/icons/users_key.ico" width="16" height="16" alt="" style="image-rendering:pixelated;object-fit:contain">
+            Admin / User Management
+        </span>
+    </div>
+
+    <div class="win-window">
+        <div class="gallery-titlebar">
+            <div class="titlebar-title" style="--titlebar-icon: url('/icons/address_book_user.ico')">
+                User Management
+            </div>
+        </div>
+
+        <div style="padding: 12px; background: #ece9d8;">
+            <div style="display:flex; gap:4px; margin-bottom:10px; flex-wrap:wrap; align-items:center;">
+                <a href="?filter=" class="toolbar-btn" style="@(string.IsNullOrEmpty(Model.Filter) ? "border-top:1px solid #404040;border-left:1px solid #404040;border-bottom:1px solid #fff;border-right:1px solid #fff;" : "")">All</a>
+                <a href="?filter=banned" class="toolbar-btn" style="@(Model.Filter == "banned" ? "border-top:1px solid #404040;border-left:1px solid #404040;border-bottom:1px solid #fff;border-right:1px solid #fff;" : "")">
+                    <img src="/icons/registration_no.ico" width="13" height="13" style="image-rendering:pixelated;"> Banned (@Model.BannedCount)
+                </a>
+                <form method="get" style="display:flex; gap:4px; margin-left:auto;">
+                    <input type="hidden" name="filter" value="@Model.Filter" />
+                    <input name="search" value="@Model.Search" placeholder="Search username…"
+                           class="win-window-inset" style="padding: 2px 6px; font-size: 12px; font-family: inherit; width:160px;" />
+                    <button type="submit" class="toolbar-btn">Search</button>
+                    @if (!string.IsNullOrWhiteSpace(Model.Search))
+                    {
+                        <a href="?filter=@Model.Filter" class="toolbar-btn">Clear</a>
+                    }
+                </form>
+            </div>
+
+            <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                <thead>
+                    <tr style="background: #c0c0c0; text-align: left;">
+                        <th style="padding: 4px 8px;">Username</th>
+                        <th style="padding: 4px 8px;">Roles</th>
+                        <th style="padding: 4px 8px;">Registered</th>
+                        <th style="padding: 4px 8px;">Status</th>
+                        <th style="padding: 4px 8px;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var entry in Model.Users)
+                    {
+                        <tr style="border-bottom: 1px solid #ccc; @(entry.User.IsBanned ? "background:#fff0f0;" : "")">
+                            <td style="padding: 4px 8px;"><strong>@entry.User.UserName</strong></td>
+                            <td style="padding: 4px 8px;">@string.Join(", ", entry.Roles)</td>
+                            <td style="padding: 4px 8px;">@entry.User.CreatedAt.ToString("yyyy-MM-dd")</td>
+                            <td style="padding: 4px 8px;">
+                                @if (entry.User.IsBanned)
+                                {
+                                    <span style="color:#8b0000;">
+                                        Banned@(entry.User.BannedUntil.HasValue ? $" until {entry.User.BannedUntil.Value:yyyy-MM-dd HH:mm}" : " (permanent)")
+                                        @if (!string.IsNullOrWhiteSpace(entry.User.BanReason))
+                                        {
+                                            <br /><em style="font-size:10px; color:#666;">@entry.User.BanReason</em>
+                                        }
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span style="color:#4a7c59;">Active</span>
+                                }
+                            </td>
+                            <td style="padding: 4px 8px;">
+                                <div style="display: flex; gap: 4px; flex-wrap: wrap;">
+                                    @if (!entry.Roles.Contains("Admin"))
+                                    {
+                                        @if (!entry.Roles.Contains("Moderator"))
+                                        {
+                                            <button class="mod-bar-btn mod-bar-btn-ok"
+                                                    onclick="openRoleModal('promote', '@entry.User.Id', '@Html.Raw(entry.User.UserName!.Replace("'", "\\'"))')">
+                                                <img src="/icons/users_key.ico" width="12" height="12" style="image-rendering:pixelated;"> +Mod
+                                            </button>
+                                        }
+                                        else
+                                        {
+                                            <button class="mod-bar-btn" style="color:#444;"
+                                                    onclick="openRoleModal('demote', '@entry.User.Id', '@Html.Raw(entry.User.UserName!.Replace("'", "\\'"))')">
+                                                <img src="/icons/users_key.ico" width="12" height="12" style="image-rendering:pixelated;"> -Mod
+                                            </button>
+                                        }
+
+                                        @if (!entry.User.IsBanned)
+                                        {
+                                            <button class="mod-bar-btn mod-bar-btn-danger" style="display:inline-flex; align-items:center; gap:3px;"
+                                                    onclick="openPermBanModal('@entry.User.Id', '@Html.Raw(entry.User.UserName!.Replace("'", "\\'"))')">
+                                                <img src="/icons/registration_no.ico" width="13" height="13" style="image-rendering:pixelated; flex-shrink:0;">Perm Ban
+                                            </button>
+                                        }
+                                        else
+                                        {
+                                            <form method="post" asp-page-handler="Unban">
+                                                <input type="hidden" name="userId" value="@entry.User.Id" />
+                                                <button type="submit" class="mod-bar-btn mod-bar-btn-ok" style="display:inline-flex; align-items:center; gap:3px;">
+                                                    <img src="/icons/file_eye.ico" width="13" height="13" style="image-rendering:pixelated; flex-shrink:0;">Unban
+                                                </button>
+                                            </form>
+                                        }
+                                    }
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <div class="gallery-statusbar">
+            <span>@Model.Users.Count users</span>
+        </div>
+    </div>
+</main>
+
+<div id="roleOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.3); z-index:1000; align-items:center; justify-content:center;">
+    <div class="win-window" style="width:340px; box-shadow:4px 4px 0 #000;">
+        <div class="gallery-titlebar">
+            <div class="titlebar-title" id="roleModalTitle" style="--titlebar-icon:url('/icons/users_key.ico')">Confirm Role Change</div>
+            <div class="gallery-titlebar-buttons">
+                <div class="titlebar-btn" onclick="closeRoleModal()">✕</div>
+            </div>
+        </div>
+        <div style="padding:12px 16px; background:#ece9d8; display:flex; gap:12px; align-items:center;">
+            <img src="/icons/users_key.ico" width="32" height="32" style="image-rendering:pixelated; flex-shrink:0;">
+            <p id="roleModalMessage" style="margin:0; font-size:12px;"></p>
+        </div>
+        <div style="padding:6px 16px 10px; background:#ece9d8; display:flex; justify-content:flex-end; gap:6px; border-top:1px solid #808080;">
+            <button class="comment-submit" id="roleConfirmBtn" onclick="confirmRoleChange()">Confirm</button>
+            <button class="toolbar-btn" style="justify-content:center; min-width:64px;" onclick="closeRoleModal()">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<form id="promoteForm" method="post" asp-page-handler="Promote" style="display:none;">
+    <input type="hidden" name="userId" id="promoteUserId" />
+</form>
+<form id="demoteForm" method="post" asp-page-handler="Demote" style="display:none;">
+    <input type="hidden" name="userId" id="demoteUserId" />
+</form>
+
+<div id="permBanOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.3); z-index:1000; align-items:center; justify-content:center;">
+    <div class="win-window" style="width:360px; box-shadow:4px 4px 0 #000;">
+        <div class="gallery-titlebar">
+            <div class="titlebar-title" style="--titlebar-icon:url('/icons/registration_no.ico')">Permanent Ban</div>
+            <div class="gallery-titlebar-buttons">
+                <div class="titlebar-btn" onclick="closePermBanModal()">✕</div>
+            </div>
+        </div>
+        <div style="padding:12px 16px; background:#ece9d8; display:flex; gap:12px; align-items:flex-start;">
+            <img src="/icons/registration_no.ico" width="32" height="32" style="image-rendering:pixelated; flex-shrink:0;">
+            <div style="flex:1; font-size:12px;">
+                <p style="margin:0 0 8px;">Permanently ban <strong id="permBanUsername"></strong>?</p>
+                <label style="display:block; margin-bottom:4px;">Reason (optional):</label>
+                <input id="permBanReasonInput" type="text" class="win-window-inset"
+                       style="width:100%; padding:2px 4px; font-size:12px; font-family:inherit;"
+                       placeholder="e.g. repeated violations"
+                       onkeydown="if(event.key==='Enter') confirmPermBan()" />
+            </div>
+        </div>
+        <div style="padding:6px 16px 10px; background:#ece9d8; display:flex; justify-content:flex-end; gap:6px; border-top:1px solid #808080;">
+            <button class="comment-submit" style="color:#8b0000;" onclick="confirmPermBan()">
+                <img src="/icons/registration_no.ico" width="13" height="13" style="image-rendering:pixelated; vertical-align:middle;"> Confirm Ban
+            </button>
+            <button class="toolbar-btn" style="justify-content:center; min-width:64px;" onclick="closePermBanModal()">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<form id="permBanForm" method="post" asp-page-handler="PermBan" style="display:none;">
+    <input type="hidden" name="userId" id="permBanUserId" />
+    <input type="hidden" name="reason" id="permBanReasonHidden" />
+</form>
+
+<script>
+let _roleAction = null, _roleUserId = null;
+
+function openRoleModal(action, userId, username) {
+    _roleAction = action;
+    _roleUserId = userId;
+    const isPromote = action === 'promote';
+    document.getElementById('roleModalTitle').textContent = isPromote ? 'Promote to Moderator' : 'Demote Moderator';
+    document.getElementById('roleModalMessage').textContent = isPromote
+        ? `Grant moderator privileges to "${username}"?`
+        : `Remove moderator privileges from "${username}"?`;
+    document.getElementById('roleConfirmBtn').style.color = isPromote ? '#2a5c2a' : '#8b0000';
+    document.getElementById('roleOverlay').style.display = 'flex';
+}
+
+function closeRoleModal() {
+    document.getElementById('roleOverlay').style.display = 'none';
+}
+
+function confirmRoleChange() {
+    document.getElementById(_roleAction + 'UserId').value = _roleUserId;
+    document.getElementById(_roleAction + 'Form').submit();
+}
+
+document.getElementById('roleOverlay').addEventListener('click', e => {
+    if (e.target === document.getElementById('roleOverlay')) closeRoleModal();
+});
+
+let _permBanUserId = null;
+
+function openPermBanModal(userId, username) {
+    _permBanUserId = userId;
+    document.getElementById('permBanUsername').textContent = username;
+    document.getElementById('permBanReasonInput').value = '';
+    document.getElementById('permBanOverlay').style.display = 'flex';
+    setTimeout(() => document.getElementById('permBanReasonInput').focus(), 50);
+}
+
+function closePermBanModal() {
+    document.getElementById('permBanOverlay').style.display = 'none';
+    _permBanUserId = null;
+}
+
+function confirmPermBan() {
+    document.getElementById('permBanUserId').value = _permBanUserId;
+    document.getElementById('permBanReasonHidden').value = document.getElementById('permBanReasonInput').value;
+    document.getElementById('permBanForm').submit();
+}
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { closePermBanModal(); closeRoleModal(); } });
+document.getElementById('permBanOverlay').addEventListener('click', e => {
+    if (e.target === document.getElementById('permBanOverlay')) closePermBanModal();
+});
+</script>

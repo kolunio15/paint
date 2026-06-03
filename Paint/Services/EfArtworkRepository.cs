@@ -17,10 +17,12 @@ public class EfArtworkRepository : IArtworkRepository
     public async Task<IReadOnlyList<ArtworkSummaryDto>> GetArtworksAsync(
         int? lastArtworkId,
         int count,
+        bool includeHidden = false,
         CancellationToken cancellationToken = default)
     {
         var safeCount = Math.Clamp(count, 1, 100);
         var query = _dbContext.Artworks.AsNoTracking();
+        if (!includeHidden) query = query.Where(a => !a.IsHidden);
 
         if (lastArtworkId.HasValue)
         {
@@ -48,12 +50,14 @@ public class EfArtworkRepository : IArtworkRepository
                 artwork.Id,
                 artwork.Title,
                 artwork.ImageUrl,
-                artwork.Votes.Sum(v => v.Value)))
+                artwork.Votes.Sum(v => v.Value),
+                artwork.IsHidden))
             .ToList();
     }
 
     public async Task<ArtworkDetailsDto?> GetArtworkDetailsAsync(
         int artworkId,
+        bool includeHidden = false,
         CancellationToken cancellationToken = default)
     {
         var artwork = await _dbContext.Artworks
@@ -62,7 +66,8 @@ public class EfArtworkRepository : IArtworkRepository
             .Include(candidate => candidate.Comments)
                 .ThenInclude(comment => comment.Author)
             .Include(candidate => candidate.Votes)
-            .FirstOrDefaultAsync(candidate => candidate.Id == artworkId, cancellationToken);
+            .FirstOrDefaultAsync(candidate => candidate.Id == artworkId &&
+                (includeHidden || !candidate.IsHidden), cancellationToken);
 
         if (artwork is null)
         {
@@ -71,6 +76,7 @@ public class EfArtworkRepository : IArtworkRepository
 
         var author = ToUserDto(artwork.Author);
         var comments = artwork.Comments
+            .Where(comment => includeHidden || !comment.IsHidden)
             .OrderBy(comment => comment.CreatedAt)
             .Select(comment => new CommentDto(
                 ToUserDto(comment.Author),
@@ -86,7 +92,8 @@ public class EfArtworkRepository : IArtworkRepository
             artwork.ImageUrl,
             [author],
             comments,
-            score);
+            score,
+            artwork.IsHidden);
     }
 
     public async Task<Artwork> PublishArtworkAsync(

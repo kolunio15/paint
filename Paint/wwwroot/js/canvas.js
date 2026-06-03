@@ -1,4 +1,17 @@
 "use strict";
+
+function generateSessionId() {
+    // preferred on https / localhost
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    // fallback for plain http
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+        const r = Math.random() * 16 | 0;
+        return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+    });
+}
+
+const sessionClientId = generateSessionId();
+
 // Canvas DOM elements
 const container = document.getElementById("canvasContainer");
 const canvas = document.getElementById("paintCanvas");
@@ -27,6 +40,25 @@ let lineStartPoint = null;
 
 let inputEventQueue = []
 let currentTool = 'brush';
+
+let reconnectDelay = 1000;
+
+// Compaction: after the initial sync, if the live event log for this room has grown
+// past this many events, the client uploads a raster snapshot of the pre-session
+// state so the server can flatten and drop the old events. Keeps storage + replay
+// bounded without losing the drawing.
+const SNAPSHOT_THRESHOLD = 400;
+let snapshotUploadAttempted = false;
+let snapshotCheckScheduled = false;
+let userHasDrawn = false;
+
+function scheduleSnapshotCheck(attempt = 0) {
+    if (attempt > 15) return;
+    setTimeout(() => {
+        const finalized = events.maybeUploadSnapshot();
+        if (!finalized) scheduleSnapshotCheck(attempt + 1);
+    }, 2500);
+}
 
 let localFlipH = false;
 let localFlipV = false;
@@ -146,6 +178,34 @@ let cache = {
                 if (!db.objectStoreNames.contains("checkpoints")) db.createObjectStore("checkpoints", { keyPath: ["roomId", "globalId"]});
             };
         });
+
+        // Clear all local checkpoints on every page load. The server is the source
+        // of truth and a fresh client reconstructs the canvas correctly by replaying
+        // events from globalId 0, so we must never seed redraws from a snapshot taken
+        // in a previous page session — those can be stale (e.g. different hidden set)
+        // and would leave the canvas blank/desynced after a reload. Checkpoints built
+        // during the current session still speed up in-session redraws.
+        await new Promise((resolve) => {
+            const tx = this.db.transaction(["checkpoints"], "readwrite");
+            tx.objectStore("checkpoints").delete(
+                IDBKeyRange.bound(
+                    [this.roomId, 0],
+                    [this.roomId, Number.MAX_SAFE_INTEGER]
+                )
+            );
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => resolve();
+        });
+    },
+    clearCheckpoints() {
+        if (!this.db) return;
+        const tx = this.db.transaction(["checkpoints"], "readwrite");
+        tx.objectStore("checkpoints").delete(
+            IDBKeyRange.bound(
+                [this.roomId, 0],
+                [this.roomId, Number.MAX_SAFE_INTEGER]
+            )
+        );
     },
     storeCheckpoint(globalId, image) {
         const transaction = this.db.transaction(["checkpoints"], "readwrite");
@@ -159,10 +219,28 @@ let cache = {
 
         request.onsuccess = () => {
             console.log("checkpoint saved", globalId);
+            this.pruneCheckpoints(globalId);
         };
         request.onerror = () => {
             console.error("failed to store checkpoint", request, e.target.error);
         }
+    },
+    pruneCheckpoints(latestId) {
+        const store = this.db
+            .transaction(["checkpoints"], "readwrite")
+            .objectStore("checkpoints");
+        store.getAllKeys(
+            IDBKeyRange.bound([this.roomId, 0], [this.roomId, latestId])
+        ).onsuccess = (e) => {
+            e.target.result.forEach(key => {
+                const age = latestId - key[1];
+                const keep = age <= 50
+                    || (age <= 200  && key[1] % 50  === 0)
+                    || (age <= 1000 && key[1] % 200 === 0)
+                    || key[1] % 1000 === 0;
+                if (!keep) store.delete(key);
+            });
+        };
     },
     async accessCheckpointBefore(globalId) {
         return new Promise((resolve, reject) => {
@@ -210,7 +288,14 @@ let cache = {
 const connection = {
     ws: null,
     connected: false,
-    id: Math.random(), // FIXME
+    // Stable, unique-per-page-load identity used to tag every event/preview this
+    // client produces. MUST stay unique across sessions/reloads — the server's
+    // numeric connection id gets reused (e.g. 0) between sessions, which made
+    // (connection, local) keys collide and replayed events get dropped as dupes.
+    id: sessionClientId,
+    // The server-assigned numeric connection id, used only for the disconnect
+    // protocol (clearing a departed peer's in-flight preview).
+    serverId: null,
 
     connect() {
         const roomId = new URLSearchParams(window.location.search).get('roomId');
@@ -218,12 +303,26 @@ const connection = {
         var url = new URL('/room_ws', window.location.href);
         url.protocol = url.protocol.replace('http', 'ws');
         url.searchParams.set('roomId', roomId);
+        // Keep the password in sessionStorage (which is scoped to this tab and cleared
+        // when the tab closes) so reconnects after a dropped socket and reloads of the
+        // same tab can re-authenticate. Removing it here broke both cases.
+        const storedPassword = sessionStorage.getItem(`roomPassword_${roomId}`);
+        if (storedPassword) {
+            url.searchParams.set('password', storedPassword);
+        }
         this.ws = new WebSocket(url.href);
         this.ws.onopen = (e) => {
             console.info('WebSocket opened');
             showNewMessage("**System**: connected");
             this.connected = true;
-            this.requestEvents(events.recievedVersion + 1);
+            reconnectDelay = 1000; // reset backoff after a successful connection
+            // Don't request events here: the server sends a `snapshot ...` message
+            // right after connect that establishes the compaction baseline and then
+            // drives the initial event request (see events.applySnapshot).
+            if (!snapshotCheckScheduled) {
+                snapshotCheckScheduled = true;
+                scheduleSnapshotCheck();
+            }
         }
         this.ws.onerror = (e) => {
             console.error("WebSocket error:", e);
@@ -235,14 +334,35 @@ const connection = {
             if (e.data.startsWith("msg ")) {
                 showNewMessage(e.data.substring("msg ".length));
             } else if (e.data.startsWith("assigned_id ")) {
-                this.id = Number(e.data.substring("assigned_id ".length));
-                console.log("assigned connection id", this.id);
+                // Keep this.id as the stable session UUID; only record the server's
+                // numeric id separately. Overwriting this.id here was the root cause
+                // of events being dropped on replay across sessions.
+                this.serverId = Number(e.data.substring("assigned_id ".length));
+                console.log("assigned server id", this.serverId, "session id", this.id);
             } else if (e.data.startsWith("canvas_size ")) {
                 const [width, height] = e.data
                     .substring("canvas_size ".length)
                     .split(" ", 2)
                     .map(Number);
                 setCanvasSize(width, height);
+            } else if (e.data.startsWith("snapshot ")) {
+                const rest = e.data.substring("snapshot ".length);
+                const sep = rest.indexOf(" ");
+                const snapGlobalId = Number(rest.substring(0, sep));
+                const url = rest.substring(sep + 1);
+                await events.applySnapshot(snapGlobalId, url);
+            } else if (e.data === "clear") {
+                events.handleClear();
+            } else if (e.data.startsWith("disconnect ")) {
+                const endedConnectionId = Number(e.data.substring("disconnect ".length));
+                let dirty = false;
+                for (const [key, preview] of events.brushStrokePreviews.entries()) {
+                    if (preview.serverId === endedConnectionId) {
+                        events.brushStrokePreviews.delete(key);
+                        dirty = true;
+                    }
+                }
+                if (dirty) events.brushStrokePreviewsDirty = true;
             } else if (e.data.startsWith("new_version ")) {
                 const version = Number(e.data.substring("new_version ".length));
                 console.log("new version", version);
@@ -272,18 +392,27 @@ const connection = {
                 }
 
 
+            } else if (e.data.startsWith("error ")) {
+                const detail = e.data.substring("error ".length);
+                console.error("Server error:", detail);
+                showNewMessage("**System**: server error — " + detail);
             } else {
                 console.log("unknown message");
             }
         },
         this.ws.onclose = (e) => {
             console.info("WebSocket closed");
-            if (this.connected) showNewMessage("**System**: disconnected");
+            if (this.connected) showNewMessage("**System**: disconnected — working offline");
             this.connected = false;
-            setTimeout(() => { this.connect() }, 5_000); // TODO: Increase delay on with each failed attempt
+            painting = false; // abort any in-progress stroke so it isn't lost half-sent
+            setTimeout(() => {
+                reconnectDelay = Math.min(reconnectDelay * 2, 30000); // exponential backoff, capped at 30s
+                this.connect();
+            }, reconnectDelay);
         }
     },
     sendChatMessage(message) {
+        if (!this.connected) return;
         try {
             this.ws.send("msg " + message);
         } catch (e) {
@@ -291,9 +420,18 @@ const connection = {
         }
     },
     sendCanvasEvent(eventObj) {
-        this.ws.send("event " + JSON.stringify(eventObj));
+        if (!this.connected) {
+            console.warn("Dropped canvas event (offline):", eventObj.kind);
+            return;
+        }
+        try {
+            this.ws.send("event " + JSON.stringify(eventObj));
+        } catch (err) {
+            console.error("Failed to send canvas event:", err);
+        }
     },
     trySendBroadcast(obj) {
+        if (!this.connected) return;
         try {
             this.ws.send("broadcast " + JSON.stringify(obj));
         } catch (e) {
@@ -301,6 +439,7 @@ const connection = {
         }
     },
     requestEvents(start, end) {
+        if (this.ws?.readyState !== WebSocket.OPEN) return;
         if (!end) end = '';
         this.ws.send(`get_events ${start} ${end}`);
     }
@@ -316,6 +455,13 @@ const events = {
 
     recievedVersion: -1,
     newestVersion: 0,
+
+    // The globalId baseline covered by the server-side snapshot image (-1 = none).
+    // liveCount = recievedVersion - snapshotBaseGlobalId.
+    snapshotBaseGlobalId: -1,
+    // True while the snapshot image is being fetched/drawn; pauses event processing
+    // so replayed events never land on a blank canvas before the base image is ready.
+    snapshotLoading: false,
 
     undoStack: [],
     undoStackIndex: -1,
@@ -333,6 +479,113 @@ const events = {
     },
     key(connection, localId) {
         return `${connection}:${localId}`;
+    },
+
+    async applySnapshot(snapGlobalId, url) {
+        this.snapshotBaseGlobalId = snapGlobalId;
+
+        // Only rebuild from the snapshot image when the server's baseline is ahead of
+        // what we already have: the initial page load, or a reconnect after the server
+        // compacted past our position. On a normal reconnect we keep our in-memory
+        // state and simply resync the events that came after.
+        if (snapGlobalId > this.recievedVersion) {
+            this.snapshotLoading = true;
+            this.global = [];
+            this.globalPending = [];
+            this.localDisplayed = [];
+            this.localIdToGlobalId.clear();
+            this.recievedVersion = snapGlobalId;
+            this.nextCheckpointId = snapGlobalId + 10;
+
+            ctx.fillStyle = "white";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            if (url && url !== "-") {
+                try {
+                    const response = await fetch(url, { cache: "no-store" });
+                    if (response.ok) {
+                        const blob = await response.blob();
+                        // Seed a checkpoint at the baseline so in-session redraws rebuild
+                        // on top of the snapshot instead of from a blank canvas.
+                        cache.storeCheckpoint(snapGlobalId, blob);
+                        const bitmap = await createImageBitmap(blob);
+                        ctx.drawImage(bitmap, 0, 0);
+                        bitmap.close();
+                    } else {
+                        console.warn("snapshot image fetch failed:", response.status);
+                    }
+                } catch (err) {
+                    console.error("failed to load snapshot image", err);
+                }
+            }
+
+            this.snapshotLoading = false;
+        }
+
+        connection.requestEvents(this.recievedVersion + 1);
+    },
+
+    handleClear() {
+        this.global = [];
+        this.globalPending = [];
+        this.localDisplayed = [];
+        this.localIdToGlobalId.clear();
+        this.recievedVersion = -1;
+        this.newestVersion = 0;
+        this.snapshotBaseGlobalId = -1;
+        this.snapshotLoading = false;
+        this.nextCheckpointId = 10;
+        this.undoStack = [];
+        this.undoStackIndex = -1;
+        this.brushStrokePreviews.clear();
+        this.brushStrokePreviewsDirty = true;
+
+        cache.clearCheckpoints();
+
+        ctx.fillStyle = "white";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+
+        showNewMessage("**System**: canvas cleared");
+    },
+
+    // Called after the initial sync settles. Returns true once a final decision has
+    // been made (stop polling), false while still catching up.
+    maybeUploadSnapshot() {
+        if (snapshotUploadAttempted) return true;
+        if (!connection.connected) return false;
+        // Still syncing or mid-stroke — wait for a quiet moment.
+        if (this.snapshotLoading || this.globalPending.length !== 0 || painting) return false;
+
+        snapshotUploadAttempted = true;
+
+        // Preserve undo: only fold PRE-session events into a snapshot. If the user has
+        // already drawn this session, skip and let a later visit compact instead.
+        if (userHasDrawn || this.localDisplayed.length !== 0) return true;
+
+        const liveCount = this.recievedVersion - this.snapshotBaseGlobalId;
+        if (liveCount <= SNAPSHOT_THRESHOLD) return true;
+
+        const roomId = new URLSearchParams(window.location.search).get('roomId');
+        if (!roomId) return true;
+
+        const g0 = this.recievedVersion;
+        const imageBase64 = canvas.toDataURL("image/png");
+        fetch(`/api/rooms/${roomId}/snapshot`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ imageBase64: imageBase64, globalId: g0 })
+        })
+            .then(r => (r.ok ? r.json() : null))
+            .then(res => {
+                if (res && res.applied) {
+                    this.snapshotBaseGlobalId = g0;
+                    console.log("[compaction] snapshot applied at globalId", g0);
+                }
+            })
+            .catch(err => console.warn("snapshot upload failed", err));
+
+        return true;
     },
 
     async redrawFromCheckpoint(beforeGlobalId) {
@@ -387,20 +640,52 @@ const events = {
     },
 
     async processPendingEvents() {
+        // Wait until the snapshot base image is loaded so replayed events draw on top
+        // of it rather than on a blank canvas.
+        if (this.snapshotLoading) return;
+
         let redrawBeforeGlobalId = Number.MAX_SAFE_INTEGER;
         let redrawRequired = false;
 
-        for (const {globalId, event} of this.globalPending) {
-            event.globalId = globalId;
-            this.global.push(event);
+        // Process buffered events strictly in ascending globalId order. On a gap
+        // (missing id) request the missing range and stop until it arrives, instead
+        // of dropping out-of-order events (which previously caused desync).
+        this.globalPending.sort((a, b) => a.globalId - b.globalId);
+
+        let i = 0;
+        while (i < this.globalPending.length) {
+            const pending = this.globalPending[i];
+
+            // Already applied — drop duplicate.
+            if (pending.globalId <= this.recievedVersion) {
+                this.globalPending.splice(i, 1);
+                continue;
+            }
+
+            // Gap — ask the server to resend from the next expected id, then wait.
+            if (pending.globalId !== this.recievedVersion + 1) {
+                connection.requestEvents(this.recievedVersion + 1, pending.globalId);
+                break;
+            }
+
+            this.recievedVersion = pending.globalId;
+            this.globalPending.splice(i, 1);
+
+            const event = pending.event;
+            event.globalId = pending.globalId;
             const key = this.key(event.connection, event.local);
 
-            this.localIdToGlobalId.set(key, globalId);
+            // NOTE: do NOT skip on `localIdToGlobalId.has(key)`. Duplicate globalIds
+            // are already filtered in eventRecieved, and each distinct event has a
+            // unique globalId. Skipping by (connection, local) wrongly discarded
+            // events whose key collided with an earlier one (legacy data where the
+            // numeric connection id was reused across sessions), which is exactly
+            // why replayed strokes vanished on reload.
+            this.global.push(event);
+            this.localIdToGlobalId.set(key, event.globalId);
             if (this.brushStrokePreviews.delete(key)) {
                 this.brushStrokePreviewsDirty = true;
             }
-
-            console.log("new_global with key", globalId, this.key(event.connection, event.local));
 
             if (this.localDisplayed.length != 0 && connection.id == event.connection && event.local == this.localDisplayed[0].local) {
                 this.localDisplayed.shift();
@@ -408,12 +693,10 @@ const events = {
                 redrawRequired = true;
                 if (event.kind == "visible") {
                     const targetGlobalId = this.localIdToGlobalId.get(this.key(event.connection, event.target));
-                    redrawBeforeGlobalId = Math.min(redrawBeforeGlobalId, targetGlobalId);
+                    redrawBeforeGlobalId = Math.min(redrawBeforeGlobalId, targetGlobalId ?? Number.MAX_SAFE_INTEGER);
                 }
-
             }
         }
-        this.globalPending.length = 0;
 
         if (redrawRequired) await this.redrawFromCheckpoint(redrawBeforeGlobalId);
 
@@ -432,10 +715,11 @@ const events = {
         }
     },
     eventRecieved(globalId, event) {
-        if (globalId != this.recievedVersion + 1) return; // Out of order event, it could just be saved for later but whatever
-
+        // Buffer everything (even out-of-order); ordering and gap handling happen
+        // in processPendingEvents. Skip ids we already have or already buffered.
+        if (this.global.some(e => e.globalId === globalId)) return;
+        if (this.globalPending.some(p => p.globalId === globalId)) return;
         this.globalPending.push({ globalId: globalId, event: event });
-        this.recievedVersion = globalId;
     },
     brushPreviewRecieved(payload) {
         if (payload.connection == connection.id) return;
@@ -443,6 +727,7 @@ const events = {
         this.brushStrokePreviewsDirty = true;
     },
     commitBrushStroke(localId, brush, points) {
+        userHasDrawn = true;
         const e = {
             connection: connection.id,
             local: localId,
@@ -462,6 +747,7 @@ const events = {
         this.undoStackIndex++;
     },
     commitShape(localId, kind, x1, y1, x2, y2, brush) {
+        userHasDrawn = true;
         const e = { connection: connection.id, local: localId, kind, x1, y1, x2, y2, brush };
         this.localDisplayed.push(e);
         connection.sendCanvasEvent(e);
@@ -471,6 +757,7 @@ const events = {
         this.undoStackIndex++;
     },
     commitFill(localId, x, y, color) {
+        userHasDrawn = true;
         const e = { connection: connection.id, local: localId, kind: "fill", color, x, y };
         this.localDisplayed.push(e);
         connection.sendCanvasEvent(e);
@@ -480,6 +767,7 @@ const events = {
         this.undoStackIndex++;
     },
     commitSetVisible(localId, visible) {
+        userHasDrawn = true;
         const id = this.newLocalId();
         const e = {
             connection: connection.id,
@@ -714,6 +1002,13 @@ async function animationFrame(timestamp) {
             case "touchstart":
             {
                 const { x: cx, y: cy } = clientXY();
+                // Pan/zoom/eyedropper are local-only and allowed offline; everything
+                // that mutates the shared canvas is blocked while disconnected.
+                const localOnlyTool = currentTool === 'hand' || currentTool === 'magnifier' || currentTool === 'eyedropper';
+                if (!connection.connected && !localOnlyTool) {
+                    showNewMessage("**System**: Cannot draw while offline.");
+                    break;
+                }
                 if (currentTool === 'hand' || currentTool === 'magnifier') {
                     _isPanning = true;
                     _panStartX = cx; _panStartY = cy;
@@ -1007,6 +1302,7 @@ function draw(e) {
     connection.trySendBroadcast({
         kind: "brushPreview",
         connection: connection.id,
+        serverId: connection.serverId,
         local: strokeLocalId,
         brush: brush,
         points: strokePoints

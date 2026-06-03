@@ -1,0 +1,390 @@
+@page
+@model Paint.Pages.Admin.AdminContentModel
+@{
+    ViewData["Title"] = "Content Moderation";
+}
+
+<main style="max-width: 960px; margin: 10px auto; padding: 0 10px;">
+
+    <div class="explorer-toolbar">
+        <a asp-page="/Admin/Index" class="toolbar-btn">
+            <div class="back-arrow"></div>
+            Back
+        </a>
+        <div class="toolbar-separator"></div>
+        <span class="toolbar-address">
+            <img src="~/icons/users_key.ico" width="16" height="16" alt="" style="image-rendering:pixelated;object-fit:contain">
+            Admin / Content Moderation
+        </span>
+    </div>
+
+    <div class="win-window">
+        <div class="gallery-titlebar">
+            <div class="titlebar-title" style="--titlebar-icon: url('/icons/directory_check.ico')">Content Moderation</div>
+        </div>
+
+        <div style="padding: 12px; background: #ece9d8;">
+
+            <div style="display: flex; gap: 4px; margin-bottom: 10px; flex-wrap:wrap; align-items:center;">
+                <a href="?tab=artworks" class="toolbar-btn" style="@(Model.Tab == "artworks" ? "border-top:1px solid #404040;border-left:1px solid #404040;border-bottom:1px solid #fff;border-right:1px solid #fff;" : "")">Artworks</a>
+                <a href="?tab=rooms" class="toolbar-btn" style="@(Model.Tab == "rooms" ? "border-top:1px solid #404040;border-left:1px solid #404040;border-bottom:1px solid #fff;border-right:1px solid #fff;" : "")">Rooms</a>
+                <a href="?tab=comments" class="toolbar-btn" style="@(Model.Tab == "comments" ? "border-top:1px solid #404040;border-left:1px solid #404040;border-bottom:1px solid #fff;border-right:1px solid #fff;" : "")">Comments</a>
+                <form method="get" style="display:flex; gap:4px; margin-left:auto;">
+                    <input type="hidden" name="tab" value="@Model.Tab" />
+                    <input name="search" value="@Model.Search" placeholder="Search…"
+                           class="win-window-inset" style="padding:1px 4px; font-size:11px; font-family:inherit; width:150px;" />
+                    <button type="submit" class="toolbar-btn">Search</button>
+                    @if (!string.IsNullOrWhiteSpace(Model.Search))
+                    {
+                        <a href="?tab=@Model.Tab" class="toolbar-btn">Clear</a>
+                    }
+                </form>
+            </div>
+
+            @if (Model.Tab == "artworks")
+            {
+                <table style="width:100%; border-collapse:collapse; font-size:12px;">
+                    <thead>
+                        <tr style="background:#c0c0c0; text-align:left;">
+                            <th style="padding:4px 8px;">Title</th>
+                            <th style="padding:4px 8px;">Author</th>
+                            <th style="padding:4px 8px;">Date</th>
+                            <th style="padding:4px 8px;">Status</th>
+                            <th style="padding:4px 8px;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var artwork in Model.Artworks)
+                        {
+                            <tr style="border-bottom:1px solid #ccc; @(artwork.IsHidden ? "background:#fff0f0;" : "")">
+                                <td style="padding:4px 8px;">
+                                    <a href="/Artwork/@artwork.Id" target="_blank" style="color:inherit;">@artwork.Title</a>
+                                </td>
+                                <td style="padding:4px 8px;"><a href="?tab=artworks&search=@artwork.Author?.UserName" style="color:inherit;">@artwork.Author?.UserName</a></td>
+                                <td style="padding:4px 8px;">@artwork.CreatedAt.ToString("yyyy-MM-dd")</td>
+                                <td style="padding:4px 8px;">
+                                    @if (artwork.ScheduledDeletionAt.HasValue)
+                                    {
+                                        <span style="color:#8b0000; font-weight:bold;">⚠ Deletion at</span>
+                                        <span style="font-size:10px; color:#8b0000; display:block;">@artwork.ScheduledDeletionAt.Value.ToString("yyyy-MM-dd HH:mm")</span>
+                                    }
+                                    else if (artwork.IsHidden)
+                                    {
+                                        <span style="color:#8b0000;">Hidden</span>
+                                        @if (artwork.HiddenAt.HasValue)
+                                        {
+                                            <span style="font-size:10px; color:#666; display:block;">@artwork.HiddenAt.Value.ToString("yyyy-MM-dd HH:mm")</span>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <span style="color:#555;">Visible</span>
+                                    }
+                                </td>
+                                <td style="padding:4px 8px; display:flex; gap:3px; flex-wrap:wrap;">
+                                    @if (artwork.ScheduledDeletionAt.HasValue)
+                                    {
+                                        <form method="post" asp-page-handler="CancelDeleteArtwork" style="display:inline;">
+                                            <input type="hidden" name="id" value="@artwork.Id" />
+                                            <button type="submit" class="mod-bar-btn mod-bar-btn-ok">
+                                                <img src="/icons/file_eye.ico" width="13" height="13" style="image-rendering:pixelated;"> Cancel
+                                            </button>
+                                        </form>
+                                    }
+                                    else
+                                    {
+                                        @if (!artwork.IsHidden)
+                                        {
+                                            <button class="mod-bar-btn mod-bar-btn-danger"
+                                                    onclick="openHideModal('artwork', @artwork.Id)">
+                                                <img src="/icons/msagent.ico" width="13" height="13" style="image-rendering:pixelated;"> Hide
+                                            </button>
+                                        }
+                                        else
+                                        {
+                                            <form method="post" asp-page-handler="UnhideArtwork" style="display:inline;">
+                                                <input type="hidden" name="id" value="@artwork.Id" />
+                                                <button type="submit" class="mod-bar-btn mod-bar-btn-ok">
+                                                    <img src="/icons/file_eye.ico" width="13" height="13" style="image-rendering:pixelated;"> Unhide
+                                                </button>
+                                            </form>
+                                        }
+                                        <button class="mod-bar-btn" style="color:#8b0000;"
+                                                onclick="openDeleteModal('artwork', @artwork.Id, '@Html.Raw(artwork.Title.Replace("'","\\'"  ))')">
+                                            <img src="/icons/recycle_bin_empty.ico" width="13" height="13" style="image-rendering:pixelated;"> Delete
+                                        </button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+
+            @if (Model.Tab == "rooms")
+            {
+                <table style="width:100%; border-collapse:collapse; font-size:12px;">
+                    <thead>
+                        <tr style="background:#c0c0c0; text-align:left;">
+                            <th style="padding:4px 8px;">Name</th>
+                            <th style="padding:4px 8px;">Owner</th>
+                            <th style="padding:4px 8px;">Date</th>
+                            <th style="padding:4px 8px;">Status</th>
+                            <th style="padding:4px 8px;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var room in Model.Rooms)
+                        {
+                            <tr style="border-bottom:1px solid #ccc; @(room.IsHidden ? "background:#fff0f0;" : "")">
+                                <td style="padding:4px 8px;">@room.Name</td>
+                                <td style="padding:4px 8px;"><a href="?tab=rooms&search=@room.Owner?.UserName" style="color:inherit;">@room.Owner?.UserName</a></td>
+                                <td style="padding:4px 8px;">@room.CreatedAt.ToString("yyyy-MM-dd")</td>
+                                <td style="padding:4px 8px;">
+                                    @if (room.ScheduledDeletionAt.HasValue)
+                                    {
+                                        <span style="color:#8b0000; font-weight:bold;">⚠ Deletion at</span>
+                                        <span style="font-size:10px; color:#8b0000; display:block;">@room.ScheduledDeletionAt.Value.ToString("yyyy-MM-dd HH:mm")</span>
+                                    }
+                                    else if (room.IsHidden)
+                                    {
+                                        <span style="color:#8b0000;">Hidden</span>
+                                        @if (room.HiddenAt.HasValue) { <span style="font-size:10px; color:#666; display:block;">@room.HiddenAt.Value.ToString("yyyy-MM-dd HH:mm")</span> }
+                                    }
+                                    else { <span style="color:#555;">Visible</span> }
+                                </td>
+                                <td style="padding:4px 8px; display:flex; gap:3px; flex-wrap:wrap;">
+                                    @if (room.ScheduledDeletionAt.HasValue)
+                                    {
+                                        <form method="post" asp-page-handler="CancelDeleteRoom" style="display:inline;">
+                                            <input type="hidden" name="id" value="@room.Id" />
+                                            <button type="submit" class="mod-bar-btn mod-bar-btn-ok">
+                                                <img src="/icons/file_eye.ico" width="13" height="13" style="image-rendering:pixelated;"> Cancel
+                                            </button>
+                                        </form>
+                                    }
+                                    else
+                                    {
+                                        @if (!room.IsHidden)
+                                        {
+                                            <button class="mod-bar-btn mod-bar-btn-danger" onclick="openHideModal('room', @room.Id)">
+                                                <img src="/icons/msagent.ico" width="13" height="13" style="image-rendering:pixelated;"> Hide
+                                            </button>
+                                        }
+                                        else
+                                        {
+                                            <form method="post" asp-page-handler="UnhideRoom" style="display:inline;">
+                                                <input type="hidden" name="id" value="@room.Id" />
+                                                <button type="submit" class="mod-bar-btn mod-bar-btn-ok">
+                                                    <img src="/icons/file_eye.ico" width="13" height="13" style="image-rendering:pixelated;"> Unhide
+                                                </button>
+                                            </form>
+                                        }
+                                        <button class="mod-bar-btn" style="color:#8b0000;"
+                                                onclick="openDeleteModal('room', @room.Id, '@Html.Raw(room.Name.Replace("'","\\'"  ))')">
+                                            <img src="/icons/recycle_bin_empty.ico" width="13" height="13" style="image-rendering:pixelated;"> Delete
+                                        </button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+
+            @if (Model.Tab == "comments")
+            {
+                <table style="width:100%; border-collapse:collapse; font-size:12px;">
+                    <thead>
+                        <tr style="background:#c0c0c0; text-align:left;">
+                            <th style="padding:4px 8px;">Content</th>
+                            <th style="padding:4px 8px;">Author</th>
+                            <th style="padding:4px 8px;">Date</th>
+                            <th style="padding:4px 8px;">Status</th>
+                            <th style="padding:4px 8px;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var comment in Model.Comments)
+                        {
+                            <tr style="border-bottom:1px solid #ccc; @(comment.IsHidden ? "background:#fff0f0;" : "")">
+                                <td style="padding:4px 8px;">
+                                    <a href="/Artwork/@comment.ArtworkId" target="_blank" style="color:inherit;">
+                                        @comment.Content.Substring(0, Math.Min(80, comment.Content.Length))@(comment.Content.Length > 80 ? "…" : "")
+                                    </a>
+                                </td>
+                                <td style="padding:4px 8px;"><a href="?tab=comments&search=@comment.Author?.UserName" style="color:inherit;">@comment.Author?.UserName</a></td>
+                                <td style="padding:4px 8px;">@comment.CreatedAt.ToString("yyyy-MM-dd")</td>
+                                <td style="padding:4px 8px;">
+                                    @if (comment.ScheduledDeletionAt.HasValue)
+                                    {
+                                        <span style="color:#8b0000; font-weight:bold;">⚠ Deletion at</span>
+                                        <span style="font-size:10px; color:#8b0000; display:block;">@comment.ScheduledDeletionAt.Value.ToString("yyyy-MM-dd HH:mm")</span>
+                                    }
+                                    else if (comment.IsHidden)
+                                    {
+                                        <span style="color:#8b0000;">Hidden</span>
+                                        @if (comment.HiddenAt.HasValue) { <span style="font-size:10px; color:#666; display:block;">@comment.HiddenAt.Value.ToString("yyyy-MM-dd HH:mm")</span> }
+                                    }
+                                    else { <span style="color:#555;">Visible</span> }
+                                </td>
+                                <td style="padding:4px 8px; display:flex; gap:3px; flex-wrap:wrap;">
+                                    @if (comment.ScheduledDeletionAt.HasValue)
+                                    {
+                                        <form method="post" asp-page-handler="CancelDeleteComment" style="display:inline;">
+                                            <input type="hidden" name="id" value="@comment.Id" />
+                                            <button type="submit" class="mod-bar-btn mod-bar-btn-ok">
+                                                <img src="/icons/file_eye.ico" width="13" height="13" style="image-rendering:pixelated;"> Cancel
+                                            </button>
+                                        </form>
+                                    }
+                                    else
+                                    {
+                                        @if (!comment.IsHidden)
+                                        {
+                                            <button class="mod-bar-btn mod-bar-btn-danger" onclick="openHideModal('comment', @comment.Id)">
+                                                <img src="/icons/msagent.ico" width="13" height="13" style="image-rendering:pixelated;"> Hide
+                                            </button>
+                                        }
+                                        else
+                                        {
+                                            <form method="post" asp-page-handler="UnhideComment" style="display:inline;">
+                                                <input type="hidden" name="id" value="@comment.Id" />
+                                                <button type="submit" class="mod-bar-btn mod-bar-btn-ok">
+                                                    <img src="/icons/file_eye.ico" width="13" height="13" style="image-rendering:pixelated;"> Unhide
+                                                </button>
+                                            </form>
+                                        }
+                                        <button class="mod-bar-btn" style="color:#8b0000;"
+                                                onclick="openDeleteModal('comment', @comment.Id, 'this comment')">
+                                            <img src="/icons/recycle_bin_empty.ico" width="13" height="13" style="image-rendering:pixelated;"> Delete
+                                        </button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+
+        <div class="gallery-statusbar"><span>Direct moderation</span></div>
+    </div>
+</main>
+
+<div id="hideOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.3); z-index:1000; align-items:center; justify-content:center;">
+    <div class="win-window" style="width:340px; box-shadow:4px 4px 0 #000;">
+        <div class="gallery-titlebar">
+            <div class="titlebar-title" style="--titlebar-icon:url('/icons/msagent.ico')">Hide Content</div>
+            <div class="gallery-titlebar-buttons">
+                <div class="titlebar-btn" onclick="closeHideModal()">✕</div>
+            </div>
+        </div>
+        <div style="padding:12px 16px; background:#ece9d8;">
+            <p style="margin:0 0 8px; font-size:12px;">Reason (optional):</p>
+            <input id="hideReasonInput" type="text" class="win-window-inset"
+                   style="width:100%; padding:2px 4px; font-size:12px; font-family:inherit;"
+                   placeholder="e.g. inappropriate content"
+                   onkeydown="if(event.key==='Enter') confirmHide()" />
+        </div>
+        <div style="padding:6px 16px 10px; background:#ece9d8; display:flex; justify-content:flex-end; gap:6px; border-top:1px solid #808080;">
+            <button class="comment-submit" style="color:#8b0000;" onclick="confirmHide()">Hide</button>
+            <button class="toolbar-btn" style="justify-content:center; min-width:64px;" onclick="closeHideModal()">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<div id="deleteOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.3); z-index:1001; align-items:center; justify-content:center;">
+    <div class="win-window" style="width:380px; box-shadow:4px 4px 0 #000;">
+        <div class="gallery-titlebar">
+            <div class="titlebar-title" style="--titlebar-icon:url('/icons/recycle_bin_full.ico')">Schedule Permanent Deletion</div>
+            <div class="gallery-titlebar-buttons">
+                <div class="titlebar-btn" onclick="closeDeleteModal()">✕</div>
+            </div>
+        </div>
+        <div style="padding:12px 16px; background:#ece9d8; display:flex; gap:12px; align-items:flex-start;">
+            <img src="/icons/msg_warning.ico" width="32" height="32" style="image-rendering:pixelated; flex-shrink:0;">
+            <div style="font-size:12px;">
+                <p style="margin:0 0 6px; font-weight:bold;">Schedule for permanent deletion?</p>
+                <p style="margin:0 0 4px;">Target: <strong id="deleteTargetName"></strong></p>
+                <p style="margin:0; color:#8b0000; font-size:11px;">⚠ This will permanently delete the content from the server after <strong>24 hours</strong>. This action can be cancelled within that window.</p>
+            </div>
+        </div>
+        <div style="padding:6px 16px 10px; background:#ece9d8; display:flex; justify-content:flex-end; gap:6px; border-top:1px solid #808080;">
+            <button class="comment-submit" style="color:#8b0000;" onclick="confirmDelete()">Schedule Delete</button>
+            <button class="toolbar-btn" style="justify-content:center; min-width:64px;" onclick="closeDeleteModal()">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<form id="deleteFormArtwork" method="post" asp-page-handler="ScheduleDeleteArtwork" style="display:none;">
+    <input type="hidden" name="id" id="deleteArtworkId" />
+</form>
+<form id="deleteFormRoom" method="post" asp-page-handler="ScheduleDeleteRoom" style="display:none;">
+    <input type="hidden" name="id" id="deleteRoomId" />
+</form>
+<form id="deleteFormComment" method="post" asp-page-handler="ScheduleDeleteComment" style="display:none;">
+    <input type="hidden" name="id" id="deleteCommentId" />
+</form>
+
+<form id="hideFormArtwork" method="post" asp-page-handler="HideArtwork" style="display:none;">
+    <input type="hidden" name="id" id="hideArtworkId" />
+    <input type="hidden" name="reason" id="hideArtworkReason" />
+</form>
+<form id="hideFormRoom" method="post" asp-page-handler="HideRoom" style="display:none;">
+    <input type="hidden" name="id" id="hideRoomId" />
+    <input type="hidden" name="reason" id="hideRoomReason" />
+</form>
+<form id="hideFormComment" method="post" asp-page-handler="HideComment" style="display:none;">
+    <input type="hidden" name="id" id="hideCommentId" />
+    <input type="hidden" name="reason" id="hideCommentReason" />
+</form>
+
+<script>
+let _deleteType = null, _deleteId = null;
+
+function openDeleteModal(type, id, name) {
+    _deleteType = type;
+    _deleteId = id;
+    document.getElementById('deleteTargetName').textContent = name;
+    document.getElementById('deleteOverlay').style.display = 'flex';
+}
+
+function closeDeleteModal() {
+    document.getElementById('deleteOverlay').style.display = 'none';
+}
+
+function confirmDelete() {
+    const cap = _deleteType.charAt(0).toUpperCase() + _deleteType.slice(1);
+    document.getElementById(`delete${cap}Id`).value = _deleteId;
+    document.getElementById(`deleteForm${cap}`).submit();
+}
+
+document.getElementById('deleteOverlay').addEventListener('click', e => {
+    if (e.target === document.getElementById('deleteOverlay')) closeDeleteModal();
+});
+
+let _hideType = null, _hideId = null;
+
+function openHideModal(type, id) {
+    _hideType = type;
+    _hideId = id;
+    document.getElementById('hideReasonInput').value = '';
+    document.getElementById('hideOverlay').style.display = 'flex';
+    setTimeout(() => document.getElementById('hideReasonInput').focus(), 50);
+}
+
+function closeHideModal() {
+    document.getElementById('hideOverlay').style.display = 'none';
+}
+
+function confirmHide() {
+    const reason = document.getElementById('hideReasonInput').value;
+    document.getElementById(`hide${_hideType.charAt(0).toUpperCase() + _hideType.slice(1)}Id`).value = _hideId;
+    document.getElementById(`hide${_hideType.charAt(0).toUpperCase() + _hideType.slice(1)}Reason`).value = reason;
+    document.getElementById(`hideForm${_hideType.charAt(0).toUpperCase() + _hideType.slice(1)}`).submit();
+}
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeHideModal(); closeDeleteModal(); } });
+document.getElementById('hideOverlay').addEventListener('click', e => { if (e.target === document.getElementById('hideOverlay')) closeHideModal(); });
+</script>

@@ -6,4 +6,5 @@ public sealed record ArtworkDetailsDto(
     string ImageUrl,
     IReadOnlyList<UserDto> Users,
     IReadOnlyList<CommentDto> Comments,
-    int Score);
+    int Score,
+    bool IsHidden = false);
