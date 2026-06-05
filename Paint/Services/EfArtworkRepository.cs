@@ -79,6 +79,7 @@ public class EfArtworkRepository : IArtworkRepository
             .Where(comment => includeHidden || !comment.IsHidden)
             .OrderBy(comment => comment.CreatedAt)
             .Select(comment => new CommentDto(
+                comment.Id,
                 ToUserDto(comment.Author),
                 comment.Content,
                 comment.CreatedAt))
@@ -152,7 +153,7 @@ public class EfArtworkRepository : IArtworkRepository
             .AsNoTracking()
             .FirstAsync(user => user.Id == authorId, cancellationToken);
 
-        return new CommentDto(ToUserDto(author), comment.Content, comment.CreatedAt);
+        return new CommentDto(comment.Id, ToUserDto(author), comment.Content, comment.CreatedAt);
     }
 
     public async Task<bool> RateArtworkAsync(

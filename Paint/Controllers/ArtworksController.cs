@@ -85,7 +85,7 @@ public class ArtworksController : ControllerBase
             cancellationToken);
 
         if (comment is not null)
-            await _moderation.EnqueueAsync(QueueItemType.CommentPosted, targetArtworkId: artworkId);
+            await _moderation.EnqueueAsync(QueueItemType.CommentPosted, targetCommentId: comment.Id);
 
         return comment is null ? NotFound() : Created($"/api/artworks/{artworkId}/comments", comment);
     }

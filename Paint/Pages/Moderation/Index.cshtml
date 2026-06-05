@@ -113,24 +113,39 @@
                             &mdash; @item.CreatedAt.ToString("yyyy-MM-dd HH:mm")
                             @if (item.ReportedBy is not null)
                             {
-                                <span> &mdash; reported by <strong>@item.ReportedBy.UserName</strong></span>
+                                <span> &mdash; reported by
+                                    @if (User.IsInRole("Admin"))
+                                    {
+                                        <a href="/Admin/Users?search=@item.ReportedBy.UserName"><strong>@item.ReportedBy.UserName</strong></a>
+                                    }
+                                    else
+                                    {
+                                        <strong>@item.ReportedBy.UserName</strong>
+                                    }
+                                </span>
                             }
                             <br />
                             @if (item.TargetUser is not null)
                             {
-                                <span>User: <strong>@item.TargetUser.UserName</strong></span>
+                                <span>User:
+                                    @if (User.IsInRole("Admin"))
+                                    {
+                                        <a href="/Admin/Users?search=@item.TargetUser.UserName"><strong>@item.TargetUser.UserName</strong></a>
+                                    }
+                                    else
+                                    {
+                                        <strong>@item.TargetUser.UserName</strong>
+                                    }
+                                </span>
                             }
                             @if (item.TargetArtwork is not null)
                             {
-                                <span>Artwork: <strong>@item.TargetArtwork.Title</strong></span>
-                                @if (item.Type == QueueItemType.ArtworkPublished)
-                                {
-                                    <br />
-                                    <a href="/Artwork/@item.TargetArtworkId" target="_blank">
-                                        <img src="@item.TargetArtwork.ImageUrl" alt="@item.TargetArtwork.Title"
-                                             style="width:200px; height:150px; object-fit:contain; border:1px solid #808080; background:#fff; margin-top:4px; display:block;" />
-                                    </a>
-                                }
+                                <span>Artwork: <a href="/Artwork/@item.TargetArtworkId" target="_blank"><strong>@item.TargetArtwork.Title</strong></a> <span style="color:#808080;">#@item.TargetArtworkId</span></span>
+                                <br />
+                                <a href="/Artwork/@item.TargetArtworkId" target="_blank">
+                                    <img src="@item.TargetArtwork.ImageUrl" alt="@item.TargetArtwork.Title"
+                                         style="width:200px; height:150px; object-fit:contain; border:1px solid #808080; background:#fff; margin-top:4px; display:block;" />
+                                </a>
                             }
                             @if (item.TargetComment is not null)
                             {
@@ -139,10 +154,8 @@
                             @if (item.TargetRoom is not null)
                             {
                                 <span>Room: <strong>@item.TargetRoom.Name</strong></span>
-                                @if (item.Type == QueueItemType.RoomCreated)
-                                {
-                                    <br />
-                                    <div style="margin-top:4px; padding:4px 6px; background:#d4d0c8; border:1px solid #b0b0b0; font-size:11px; display:inline-block;">
+                                <br />
+                                <div style="margin-top:4px; padding:4px 6px; background:#d4d0c8; border:1px solid #b0b0b0; font-size:11px; display:inline-block;">
                                         <img src="/icons/paint_file.ico" width="12" height="12" style="image-rendering:pixelated; vertical-align:middle;"> Canvas: @item.TargetRoom.CanvasWidth × @item.TargetRoom.CanvasHeight<br />
                                         <img src="/icons/users_green.ico" width="12" height="12" style="image-rendering:pixelated; vertical-align:middle;"> Max: @item.TargetRoom.MaxUsers users<br />
                                         @if (item.TargetRoom.IsProtected)
@@ -153,12 +166,23 @@
                                         {
                                             <span style="color:#555;">Public</span>
                                         }
-                                    </div>
-                                }
+                                </div>
                             }
                             @if (!string.IsNullOrWhiteSpace(item.ReportReason))
                             {
                                 <br /><span style="color:#444;">Reason: @item.ReportReason</span>
+                            }
+                            @if (item.Status == QueueItemStatus.Escalated && !string.IsNullOrWhiteSpace(item.ReviewNote))
+                            {
+                                <br />
+                                <span style="color:#8b0000;">
+                                    <img src="/icons/msg_error.ico" width="12" height="12" style="image-rendering:pixelated; vertical-align:middle;">
+                                    <strong>@item.ReviewNote</strong>
+                                    @if (item.ReviewedBy is not null)
+                                    {
+                                        <span style="color:#808080;"> — by @item.ReviewedBy.UserName@(item.ReviewedAt.HasValue ? " at " + item.ReviewedAt.Value.ToString("yyyy-MM-dd HH:mm") : "")</span>
+                                    }
+                                </span>
                             }
                         </div>
 

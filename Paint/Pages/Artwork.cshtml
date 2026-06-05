@@ -114,15 +114,15 @@
                         <span class="comment-date">@comment.CreatedAt.ToLocalTime().ToString("MM/dd/yyyy HH:mm")</span>
                         @if (User.IsInRole("Admin") || User.IsInRole("Moderator"))
                         {
-                            <button class="mod-bar-btn" style="margin-left:auto;" title="Add to moderation queue"
-                                    onclick="enqueueItem()">
+                            <button class="mod-bar-btn" style="margin-left:auto;" title="Add comment to moderation queue"
+                                    onclick="enqueueComment(@comment.Id)">
                                 <img src="/icons/message_tack.ico" width="13" height="13" style="image-rendering:pixelated;">
                             </button>
                         }
                         else if (User.Identity?.IsAuthenticated == true)
                         {
-                            <button class="mod-flag-btn" style="margin-left:auto;" title="Report"
-                                    onclick="openReportModal(artworkId, null, null)">⚑</button>
+                            <button class="mod-flag-btn" style="margin-left:auto;" title="Report comment"
+                                    onclick="openReportModal(null, @comment.Id, null)">⚑</button>
                         }
                     </div>
                     <div class="comment-text">@comment.Content</div>
@@ -176,6 +176,14 @@ async function enqueueItem() {
         method: 'POST',
         headers: antiforgeryHeaders(),
         body: JSON.stringify({ targetArtworkId: artworkId })
+    });
+}
+
+async function enqueueComment(commentId) {
+    await fetch('/api/moderation/enqueue', {
+        method: 'POST',
+        headers: antiforgeryHeaders(),
+        body: JSON.stringify({ targetCommentId: commentId })
     });
 }
 
