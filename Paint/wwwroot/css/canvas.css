@@ -1,4 +1,4 @@
-* {
+﻿* {
     box-sizing: border-box;
 }
 
@@ -7,18 +7,18 @@
     flex-direction: column;
     height: calc(100vh - 54px);
     width: 100%;
-    background: #ece9d8;
+    background: #c0c0c0;
     font-family: Tahoma, "MS Sans Serif", Arial, sans-serif;
     font-size: 11px;
     overflow: hidden;
 }
 
-/* ── Menu Bar ─────────────────────────────────────────────── */
+/* â”€â”€ Menu Bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .menu-bar {
     display: flex;
     padding: 1px 2px;
-    background: #ece9d8;
+    background: #c0c0c0;
     border-bottom: 1px solid #9a9b9c;
     font-size: 11px;
     flex-shrink: 0;
@@ -35,7 +35,7 @@
     color: #fff;
 }
 
-/* ── Main Content ─────────────────────────────────────────── */
+/* â”€â”€ Main Content â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .main-content {
     display: flex;
@@ -44,7 +44,7 @@
     overflow: hidden;
 }
 
-/* ── Toolbox ──────────────────────────────────────────────── */
+/* â”€â”€ Toolbox â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .toolbox {
     width: 64px;
@@ -54,7 +54,7 @@
     align-items: center;
     padding: 4px 3px;
     border-right: 1px solid #9a9b9c;
-    background: #ece9d8;
+    background: #c0c0c0;
 }
 
 .tools {
@@ -69,7 +69,7 @@
     width: 23px;
     height: 23px;
     cursor: pointer;
-    background-color: #d4d0c8;
+    background-color: #c0c0c0;
     /* 2-step Windows 3D raised bevel: outer white/dk-shadow + inner light/shadow */
     border: 1px solid;
     border-color: #ffffff #404040 #404040 #ffffff;
@@ -93,14 +93,14 @@
 }
 
 .tool:hover:not(.tool-disabled):not(.active) {
-    background-color: #e2dfd6;
+    background-color: #c0c0c0;
 }
 
 .tool.active {
     /* sunken: invert both bevel steps */
     border-color: #404040 #ffffff #ffffff #404040;
     box-shadow: inset 1px 1px 0 #808080, inset -1px -1px 0 #dfdfdf;
-    background-color: #d4d0c8;
+    background-color: #c0c0c0;
 }
 
 /* nudge the icon down-right when pressed, for a real "pushed in" feel */
@@ -135,7 +135,7 @@
     width: 52px;
     border: 1px solid #404040;
     box-shadow: inset 1px 1px 0 #808080, inset -1px -1px 0 #dfdfdf;
-    background: #d4d0c8;
+    background: #c0c0c0;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -167,7 +167,7 @@
     cursor: pointer;
 }
 
-/* ── Canvas Area ──────────────────────────────────────────── */
+/* â”€â”€ Canvas Area â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .canvas-area {
     flex-grow: 1;
@@ -190,10 +190,10 @@
     image-rendering: pixelated;
 }
 
-/* ── Bottom Bar ───────────────────────────────────────────── */
+/* â”€â”€ Bottom Bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .bottom-bar {
-    background: #ece9d8;
+    background: #c0c0c0;
     border-top: 1px solid #9a9b9c;
     padding: 3px 4px;
     display: flex;
@@ -250,11 +250,11 @@
     outline-offset: -1px;
 }
 
-/* ── Status Bar ───────────────────────────────────────────── */
+/* â”€â”€ Status Bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .status-bar {
     height: 22px;
-    background: #ece9d8;
+    background: #c0c0c0;
     border-top: 1px solid #9a9b9c;
     padding: 2px 4px;
     font-size: 11px;
@@ -263,7 +263,7 @@
     flex-shrink: 0;
 }
 
-/* ── Chat ─────────────────────────────────────────────────── */
+/* â”€â”€ Chat â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .chat-container {
     position: fixed;
@@ -292,7 +292,7 @@
 
 .chat-body {
     display: none;
-    background: #ece9d8;
+    background: #c0c0c0;
     border: 2px solid;
     border-color: #fff #808080 #808080 #fff;
     border-top: none;
@@ -340,7 +340,7 @@
 }
 
 .chat-input-area button {
-    background: #ece9d8;
+    background: #c0c0c0;
     border: 2px solid;
     border-color: #fff #808080 #808080 #fff;
     font-size: 11px;
@@ -352,3 +352,4 @@
 .chat-input-area button:active {
     border-color: #808080 #fff #fff #808080;
 }
+

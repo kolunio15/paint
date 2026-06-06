@@ -1,4 +1,4 @@
-@page
+﻿@page
 @{
     ViewData["Title"] = "Let's Paint!";
 }
@@ -78,9 +78,9 @@
             @if (User.Identity?.IsAuthenticated == true && !User.IsInRole("Admin") && !User.IsInRole("Moderator"))
             {
                 <button class="mod-flag-btn" title="Report this room" style="color:#808080;"
-                        onclick="event.stopPropagation(); openRoomReportModal()">⚑</button>
+                        onclick="event.stopPropagation(); openRoomReportModal()">âš‘</button>
             }
-            <span>▲</span>
+            <span>â–˛</span>
         </span>
     </div>
     <div class="chat-body" id="chatBody">
@@ -98,9 +98,9 @@
     <div class="win-window" style="width:400px;box-shadow:4px 4px 0 #000">
         <div class="gallery-titlebar">
             <div class="titlebar-title" style="--titlebar-icon:url('/icons/paint_file.ico')">Publish to Gallery</div>
-            <div class="gallery-titlebar-buttons"><div class="titlebar-btn" onclick="hideOverlay('publishOverlay')">✕</div></div>
+            <div class="gallery-titlebar-buttons"><div class="titlebar-btn" onclick="hideOverlay('publishOverlay')">âś•</div></div>
         </div>
-        <div style="padding:16px;background:#ece9d8">
+        <div style="padding:16px;background:#c0c0c0">
             <div id="publishError"   class="msg-error"   style="display:none"></div>
             <div id="publishSuccess" class="msg-success" style="display:none"></div>
             <img id="publishPreview" class="publish-preview" alt="Preview">
@@ -120,9 +120,9 @@
     <div class="win-window" style="width:360px;box-shadow:4px 4px 0 #000">
         <div class="gallery-titlebar">
             <div class="titlebar-title" style="--titlebar-icon:url('/icons/accessibility.ico')">Keyboard Shortcuts</div>
-            <div class="gallery-titlebar-buttons"><div class="titlebar-btn" onclick="hideOverlay('shortcutsOverlay')">✕</div></div>
+            <div class="gallery-titlebar-buttons"><div class="titlebar-btn" onclick="hideOverlay('shortcutsOverlay')">âś•</div></div>
         </div>
-        <div style="padding:16px;background:#ece9d8">
+        <div style="padding:16px;background:#c0c0c0">
             <table style="width:100%;border-collapse:collapse;font-size:12px">
                 <tr style="background:#c0c0c0"><th style="padding:3px 8px;text-align:left">Shortcut</th><th style="padding:3px 8px;text-align:left">Action</th></tr>
                 <tr><td style="padding:3px 8px"><kbd>Ctrl+Z</kbd></td><td style="padding:3px 8px">Undo</td></tr>
@@ -141,9 +141,9 @@
     <div class="win-window" style="width:340px;box-shadow:4px 4px 0 #000">
         <div class="gallery-titlebar">
             <div class="titlebar-title" id="confirmTitle" style="--titlebar-icon:url('/icons/paint_file.ico')">Confirm</div>
-            <div class="gallery-titlebar-buttons"><div class="titlebar-btn" onclick="hideOverlay('confirmOverlay')">✕</div></div>
+            <div class="gallery-titlebar-buttons"><div class="titlebar-btn" onclick="hideOverlay('confirmOverlay')">âś•</div></div>
         </div>
-        <div style="padding:16px;background:#ece9d8">
+        <div style="padding:16px;background:#c0c0c0">
             <div id="confirmMessage" style="font-size:13px;margin-bottom:14px;line-height:1.4"></div>
             <div class="btn-row">
                 <button class="comment-submit" id="confirmOkBtn">OK</button>
@@ -159,7 +159,7 @@
 .win-dropdown {
     position: fixed;
     z-index: 500;
-    background: #ece9d8;
+    background: #c0c0c0;
     border: 1px solid #9a9b9c;
     box-shadow: 2px 2px 4px rgba(0,0,0,0.25);
     min-width: 180px;
@@ -223,7 +223,7 @@
     margin-top: 12px;
 }
 kbd {
-    background: #ece9d8;
+    background: #c0c0c0;
     border: 1px solid;
     border-color: #fff #808080 #808080 #fff;
     padding: 1px 5px;
@@ -268,8 +268,8 @@ const MENUS = {
     view: {
         anchor: 'menuView',
         items: [
-            { label: 'Zoom In',          shortcut: 'Ctrl+↑scroll', action: menuZoomIn },
-            { label: 'Zoom Out',         shortcut: 'Ctrl+↓scroll', action: menuZoomOut },
+            { label: 'Zoom In',          shortcut: 'Ctrl+â†‘scroll', action: menuZoomIn },
+            { label: 'Zoom Out',         shortcut: 'Ctrl+â†“scroll', action: menuZoomOut },
             { label: 'Reset Zoom (100%)',                           action: menuZoomReset },
         ]
     },
@@ -331,7 +331,7 @@ function openMenu(name) {
             if (locked) {
                 const lock = document.createElement('span');
                 lock.className = 'shortcut';
-                lock.textContent = '🔒';
+                lock.textContent = 'đź”’';
                 el.appendChild(lock);
             } else if (item.shortcut) {
                 const s = document.createElement('span');
@@ -588,19 +588,21 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closeRoomRep
         <div class="gallery-titlebar">
             <div class="titlebar-title" style="--titlebar-icon:url('/icons/msg_warning.ico')">Report Room</div>
             <div class="gallery-titlebar-buttons">
-                <div class="titlebar-btn" onclick="closeRoomReportModal()">✕</div>
+                <div class="titlebar-btn" onclick="closeRoomReportModal()">âś•</div>
             </div>
         </div>
-        <div style="padding:12px 16px; background:#ece9d8;">
+        <div style="padding:12px 16px; background:#c0c0c0;">
             <p style="margin:0 0 8px; font-size:12px;">Describe the issue (optional):</p>
             <input id="roomReportInput" type="text" class="win-window-inset"
                    style="width:100%; padding:2px 4px; font-size:12px; font-family:inherit;"
                    placeholder="e.g. inappropriate content"
                    onkeydown="if(event.key==='Enter') submitRoomReport()" />
         </div>
-        <div style="padding:6px 16px 10px; background:#ece9d8; display:flex; justify-content:flex-end; gap:6px; border-top:1px solid #808080;">
+        <div style="padding:6px 16px 10px; background:#c0c0c0; display:flex; justify-content:flex-end; gap:6px; border-top:1px solid #808080;">
             <button class="comment-submit" onclick="submitRoomReport()">Report</button>
             <button class="toolbar-btn" style="justify-content:center; min-width:64px;" onclick="closeRoomReportModal()">Cancel</button>
         </div>
     </div>
 </div>
+
+
