@@ -38,6 +38,33 @@ let strokeLocalId = -1;
 let strokePoints = []
 let lineStartPoint = null;
 
+// Multi-step tool state.
+// Polygon: accumulates vertices across clicks until closed.
+let polygonPoints = [];
+// Curve: phase 0 = drag the base line, phase 1 = move/click to set the bend.
+let curvePhase = 0;
+let curveAnchor = null; // { x1, y1, x2, y2 }
+
+// Text: a live overlay <textarea> placed over the canvas while typing.
+let textOverlay = null;  // the DOM element while editing, else null
+let textLocalId = -1;
+let textPos = null;      // { x, y } canvas-pixel anchor (top-left)
+
+// Selection (rectangular + free-form). A selection is captured into an offscreen
+// canvas, shown floating on the preview layer, and only written to the shared
+// canvas as one atomic "selectMove" event when dropped at a new position.
+let selState = 'none';      // 'none' | 'selecting' | 'selected' | 'moving'
+let selStart = null;        // marquee start point (canvas px)
+let selRect = null;         // current selection rect { x, y, w, h }
+let selOrigRect = null;     // rect the content was captured from
+let selCanvas = null;       // offscreen canvas holding the captured content
+let selPath = null;         // lasso path (free-form), canvas coords; null for rect
+let selMoveStart = null;    // pointer at the start of a move
+let selRectAtStart = null;  // { x, y } of selRect when a move began
+
+// Drag-based shapes that share the press→move-preview→release flow.
+const SHAPE_TOOLS = ['line', 'rect', 'ellipse', 'roundrect'];
+
 let inputEventQueue = []
 let currentTool = 'brush';
 
@@ -106,6 +133,10 @@ function currentBrush() {
 }
 
 function setCurrentTool(tool) {
+    // Commit any open text and abandon any half-built multi-step shape/selection first.
+    finalizeText(true);
+    cancelPendingShapes();
+    clearSelection();
     currentTool = tool;
     document.querySelectorAll('.tool[id]').forEach(el => el.classList.remove('active'));
     const el = document.getElementById(tool);
@@ -116,6 +147,300 @@ function setCurrentTool(tool) {
     }
     lineStartPoint = null;
     previewCtx?.clearRect(0, 0, previewCanvas?.width ?? 0, previewCanvas?.height ?? 0);
+}
+
+// Convert client (screen) coordinates to integer canvas pixel coordinates,
+// honouring the local-only flips. Shared by the input loop and the multi-step
+// tool helpers (which run outside animationFrame).
+function clientToCanvas(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    let x = Math.floor((clientX - rect.left) * canvas.width  / rect.width);
+    let y = Math.floor((clientY - rect.top)  * canvas.height / rect.height);
+    if (localFlipH) x = canvas.width  - 1 - x;
+    if (localFlipV) y = canvas.height - 1 - y;
+    return { x: Math.max(0, Math.min(canvas.width - 1, x)),
+             y: Math.max(0, Math.min(canvas.height - 1, y)) };
+}
+
+function clearPreview() {
+    previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+}
+
+// Drop in-progress polygon/curve construction and wipe their preview.
+function cancelPendingShapes() {
+    const had = polygonPoints.length > 0 || curvePhase !== 0;
+    polygonPoints = [];
+    curvePhase = 0;
+    curveAnchor = null;
+    if (had) clearPreview();
+}
+
+/* ---- Polygon: click to add vertices, close near the first one / Enter ---- */
+const POLY_CLOSE_DIST = 8; // canvas px proximity to the first vertex that closes the loop
+
+function previewPolygon(cursor) {
+    clearPreview();
+    if (polygonPoints.length === 0) return;
+    const b = currentBrush();
+    previewCtx.save();
+    previewCtx.strokeStyle = b.color;
+    previewCtx.lineWidth   = b.width;
+    previewCtx.lineCap = 'round';
+    previewCtx.lineJoin = 'round';
+    previewCtx.beginPath();
+    previewCtx.moveTo(polygonPoints[0].x + 0.5, polygonPoints[0].y + 0.5);
+    for (let i = 1; i < polygonPoints.length; i++)
+        previewCtx.lineTo(polygonPoints[i].x + 0.5, polygonPoints[i].y + 0.5);
+    if (cursor) previewCtx.lineTo(cursor.x + 0.5, cursor.y + 0.5);
+    previewCtx.stroke();
+    previewCtx.restore();
+}
+
+function handlePolygonClick(pt) {
+    if (polygonPoints.length >= 3) {
+        const first = polygonPoints[0];
+        if (Math.hypot(pt.x - first.x, pt.y - first.y) <= POLY_CLOSE_DIST) {
+            closePolygon();
+            return;
+        }
+    }
+    polygonPoints.push(pt);
+    previewPolygon(pt);
+}
+
+function closePolygon() {
+    if (polygonPoints.length >= 2) {
+        events.commitPolygon(events.newLocalId(), polygonPoints.slice(), true, currentBrush());
+    }
+    polygonPoints = [];
+    clearPreview();
+}
+
+/* ---- Curve: drag a base line, then move/click to set the bend ---- */
+function previewCurve(cursor) {
+    clearPreview();
+    if (!curveAnchor) return;
+    const b = currentBrush();
+    previewCtx.save();
+    previewCtx.strokeStyle = b.color;
+    previewCtx.lineWidth   = b.width;
+    previewCtx.lineCap = 'round';
+    previewCtx.beginPath();
+    previewCtx.moveTo(curveAnchor.x1 + 0.5, curveAnchor.y1 + 0.5);
+    if (curvePhase === 0) {
+        previewCtx.lineTo(cursor.x + 0.5, cursor.y + 0.5);
+    } else {
+        previewCtx.quadraticCurveTo(cursor.x + 0.5, cursor.y + 0.5,
+                                    curveAnchor.x2 + 0.5, curveAnchor.y2 + 0.5);
+    }
+    previewCtx.stroke();
+    previewCtx.restore();
+}
+
+/* ---- Text: click to place a live textarea, type, Enter/blur to stamp ---- */
+const TEXT_FONT = 'Tahoma, "MS Sans Serif", Arial, sans-serif';
+
+// Map the size slider (1..20) to a readable font size in canvas pixels.
+function fontPxForSize() {
+    return Math.round(8 + Math.ceil(sizeInput.value) * 4);
+}
+
+function startTextInput(pt) {
+    // Commit any text already being edited before starting a new one.
+    finalizeText(true);
+
+    const fontPx = fontPxForSize();
+    const color = currentMainColor;
+    textPos = { x: pt.x, y: pt.y };
+    textLocalId = events.newLocalId();
+
+    const ta = document.createElement('textarea');
+    ta.spellcheck = false;
+    ta.style.cssText =
+        'position:absolute;margin:0;padding:0;border:1px dashed #000;background:transparent;' +
+        'overflow:hidden;resize:none;outline:none;white-space:pre;line-height:1.2;' +
+        'z-index:10;box-sizing:content-box;';
+    ta.style.left       = pt.x + 'px';
+    ta.style.top        = pt.y + 'px';
+    ta.style.color      = color;
+    ta.style.font       = `${fontPx}px ${TEXT_FONT}`;
+    ta.style.minWidth   = '4px';
+    ta.style.height     = (fontPx * 1.2) + 'px';
+    ta.dataset.fontPx   = String(fontPx);
+    ta.dataset.color    = color;
+
+    // Grow with content so the box matches what will be drawn.
+    const autosize = () => {
+        ta.style.width  = 'auto';
+        ta.style.height = 'auto';
+        ta.style.width  = Math.max(4, ta.scrollWidth) + 'px';
+        ta.style.height = ta.scrollHeight + 'px';
+    };
+    ta.addEventListener('input', autosize);
+    ta.addEventListener('keydown', (ev) => {
+        ev.stopPropagation(); // don't let typing reach the global canvas shortcuts
+        if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); finalizeText(true); }
+        else if (ev.key === 'Escape')           { ev.preventDefault(); finalizeText(false); }
+    });
+    // Clicking away commits the text.
+    ta.addEventListener('blur', () => finalizeText(true));
+
+    _canvasWrapper.appendChild(ta);
+    textOverlay = ta;
+    setTimeout(() => ta.focus(), 0);
+}
+
+function finalizeText(commit) {
+    if (!textOverlay) return;
+    const ta = textOverlay;
+    textOverlay = null; // clear first so blur handler doesn't re-enter
+
+    const text = ta.value;
+    const fontPx = Number(ta.dataset.fontPx);
+    const color = ta.dataset.color;
+    ta.remove();
+
+    if (commit && text.trim().length > 0 && textPos) {
+        events.commitText(textLocalId, textPos.x, textPos.y, text, fontPx, color, TEXT_FONT);
+    }
+    textPos = null;
+}
+
+/* ---- Selection: rectangular (select) and free-form lasso (freeform) ---- */
+function isSelectTool() { return currentTool === 'select' || currentTool === 'freeform'; }
+
+function pointInSel(pt) {
+    return selState === 'selected' && selRect &&
+        pt.x >= selRect.x && pt.x < selRect.x + selRect.w &&
+        pt.y >= selRect.y && pt.y < selRect.y + selRect.h;
+}
+
+function clearSelection() {
+    const had = selState !== 'none';
+    selState = 'none'; selStart = null; selRect = null; selOrigRect = null;
+    selCanvas = null; selPath = null; selMoveStart = null; selRectAtStart = null;
+    if (had) clearPreview();
+}
+
+function rectFromPoints(a, b) {
+    return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y),
+             w: Math.abs(b.x - a.x), h: Math.abs(b.y - a.y) };
+}
+
+function clampRectToCanvas(r) {
+    const x = Math.max(0, r.x), y = Math.max(0, r.y);
+    return { x, y,
+             w: Math.min(canvas.width - x, r.w + r.x - x),
+             h: Math.min(canvas.height - y, r.h + r.y - y) };
+}
+
+function pathBounds(path) {
+    let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
+    for (const p of path) {
+        minx = Math.min(minx, p.x); miny = Math.min(miny, p.y);
+        maxx = Math.max(maxx, p.x); maxy = Math.max(maxy, p.y);
+    }
+    return { x: Math.floor(minx), y: Math.floor(miny),
+             w: Math.ceil(maxx - minx), h: Math.ceil(maxy - miny) };
+}
+
+// Dashed primitives (do NOT clear the preview — caller controls clearing).
+function strokeDashedRect(r) {
+    previewCtx.save();
+    previewCtx.strokeStyle = '#000'; previewCtx.lineWidth = 1; previewCtx.setLineDash([4, 4]);
+    previewCtx.strokeRect(r.x + 0.5, r.y + 0.5, r.w, r.h);
+    previewCtx.restore();
+}
+function strokeDashedPath(path, dx = 0, dy = 0) {
+    if (!path || path.length < 2) return;
+    previewCtx.save();
+    previewCtx.strokeStyle = '#000'; previewCtx.lineWidth = 1; previewCtx.setLineDash([4, 4]);
+    previewCtx.beginPath();
+    previewCtx.moveTo(path[0].x + dx + 0.5, path[0].y + dy + 0.5);
+    for (let i = 1; i < path.length; i++) previewCtx.lineTo(path[i].x + dx + 0.5, path[i].y + dy + 0.5);
+    previewCtx.closePath();
+    previewCtx.stroke();
+    previewCtx.restore();
+}
+
+// Copy a rectangular region of the live canvas into an offscreen canvas.
+function captureRect(r) {
+    const tmp = document.createElement('canvas');
+    tmp.width = r.w; tmp.height = r.h;
+    tmp.getContext('2d').drawImage(canvas, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h);
+    return tmp;
+}
+// Same, but masked to the lasso path (pixels outside the path stay transparent).
+function captureLasso(path, r) {
+    const tmp = document.createElement('canvas');
+    tmp.width = r.w; tmp.height = r.h;
+    const t = tmp.getContext('2d');
+    t.save();
+    t.beginPath();
+    t.moveTo(path[0].x - r.x, path[0].y - r.y);
+    for (let i = 1; i < path.length; i++) t.lineTo(path[i].x - r.x, path[i].y - r.y);
+    t.closePath();
+    t.clip();
+    t.drawImage(canvas, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h);
+    t.restore();
+    return tmp;
+}
+
+function drawSelectionStaticPreview() {
+    clearPreview();
+    if (selPath) strokeDashedPath(selPath);
+    else if (selRect) strokeDashedRect(selRect);
+}
+
+function drawSelectionMovePreview() {
+    clearPreview();
+    const dx = selRect.x - selOrigRect.x, dy = selRect.y - selOrigRect.y;
+    // 1) hide the lifted source by painting the background colour where it was
+    previewCtx.save();
+    previewCtx.fillStyle = currentSecondaryColor;
+    if (selPath) {
+        previewCtx.beginPath();
+        previewCtx.moveTo(selPath[0].x, selPath[0].y);
+        for (let i = 1; i < selPath.length; i++) previewCtx.lineTo(selPath[i].x, selPath[i].y);
+        previewCtx.closePath();
+        previewCtx.fill();
+    } else {
+        previewCtx.fillRect(selOrigRect.x, selOrigRect.y, selOrigRect.w, selOrigRect.h);
+    }
+    previewCtx.restore();
+    // 2) the floating content at its moved position
+    if (selCanvas) previewCtx.drawImage(selCanvas, selRect.x, selRect.y);
+    // 3) outline at the moved position
+    if (selPath) strokeDashedPath(selPath, dx, dy);
+    else strokeDashedRect(selRect);
+}
+
+function finalizeMarquee() {
+    if (currentTool === 'freeform') {
+        if (!selPath || selPath.length < 3) { clearSelection(); return; }
+        let r = clampRectToCanvas(pathBounds(selPath));
+        if (r.w < 1 || r.h < 1) { clearSelection(); return; }
+        selCanvas = captureLasso(selPath, r);
+        selRect = { ...r }; selOrigRect = { ...r };
+        selState = 'selected';
+        drawSelectionStaticPreview();
+    } else {
+        let r = clampRectToCanvas(selRect);
+        if (!r || r.w < 1 || r.h < 1) { clearSelection(); return; }
+        selCanvas = captureRect(r);
+        selRect = { ...r }; selOrigRect = { ...r }; selPath = null;
+        selState = 'selected';
+        drawSelectionStaticPreview();
+    }
+}
+
+function finalizeMove() {
+    const dx = selRect.x - selOrigRect.x, dy = selRect.y - selOrigRect.y;
+    if ((dx !== 0 || dy !== 0) && selCanvas) {
+        events.commitSelectMove(events.newLocalId(), selOrigRect, selRect,
+                                selCanvas, currentSecondaryColor, selPath);
+    }
+    clearSelection();
 }
 
 function floodFill(ctx, startX, startY, fillColor) {
@@ -628,6 +953,16 @@ const events = {
 
         for (const e of events(this, checkpointGlobalId)) {
             if (e.kind == "visible" || hidden.has(this.key(e.connection, e.local))) continue;
+
+            if (e.kind === "selectMove" && e.image && !isDrawable(e._bitmap)) {
+                try {
+                    const blob = await (await fetch(e.image)).blob();
+                    e._bitmap = await createImageBitmap(blob);
+                } catch (err) {
+                    console.error("selectMove image decode failed", err);
+                }
+            }
+
             drawEvent(ctx, e);
 
             if (e.globalId && e.globalId > this.nextCheckpointId) { // this only saves when the rollback was required
@@ -756,6 +1091,54 @@ const events = {
         this.undoStack.push(localId);
         this.undoStackIndex++;
     },
+    commitPolygon(localId, points, closed, brush) {
+        userHasDrawn = true;
+        const e = { connection: connection.id, local: localId, kind: "polygon", points, closed, brush };
+        this.localDisplayed.push(e);
+        connection.sendCanvasEvent(e);
+        drawEvent(ctx, e);
+        this.undoStack.length = this.undoStackIndex + 1;
+        this.undoStack.push(localId);
+        this.undoStackIndex++;
+    },
+    commitCurve(localId, x1, y1, x2, y2, cx, cy, brush) {
+        userHasDrawn = true;
+        const e = { connection: connection.id, local: localId, kind: "curve", x1, y1, x2, y2, cx, cy, brush };
+        this.localDisplayed.push(e);
+        connection.sendCanvasEvent(e);
+        drawEvent(ctx, e);
+        this.undoStack.length = this.undoStackIndex + 1;
+        this.undoStack.push(localId);
+        this.undoStackIndex++;
+    },
+    commitText(localId, x, y, text, size, color, font) {
+        userHasDrawn = true;
+        const e = { connection: connection.id, local: localId, kind: "text", x, y, text, size, color, font };
+        this.localDisplayed.push(e);
+        connection.sendCanvasEvent(e);
+        drawEvent(ctx, e);
+        this.undoStack.length = this.undoStackIndex + 1;
+        this.undoStack.push(localId);
+        this.undoStackIndex++;
+    },
+    commitSelectMove(localId, orig, dest, srcCanvas, bg, path) {
+        userHasDrawn = true;
+        const e = {
+            connection: connection.id, local: localId, kind: "selectMove",
+            sx: orig.x, sy: orig.y, sw: orig.w, sh: orig.h,
+            dx: dest.x, dy: dest.y,
+            image: srcCanvas.toDataURL("image/png"),
+            bg,
+            path: path ? path.map(p => ({ x: p.x, y: p.y })) : null,
+        };
+        this.localDisplayed.push(e);
+        connection.sendCanvasEvent(e);
+        e._bitmap = srcCanvas;
+        drawEvent(ctx, e);
+        this.undoStack.length = this.undoStackIndex + 1;
+        this.undoStack.push(localId);
+        this.undoStackIndex++;
+    },
     commitFill(localId, x, y, color) {
         userHasDrawn = true;
         const e = { connection: connection.id, local: localId, kind: "fill", color, x, y };
@@ -814,7 +1197,8 @@ async function initApp() {
 }
 
 function initTools() {
-    ['pen', 'brush', 'eraser', 'bucket', 'eyedropper', 'magnifier', 'airbrush', 'line', 'rect', 'ellipse'].forEach(name => {
+    ['pen', 'brush', 'eraser', 'bucket', 'eyedropper', 'magnifier', 'airbrush', 'text',
+     'select', 'freeform', 'line', 'curve', 'rect', 'polygon', 'ellipse', 'roundrect'].forEach(name => {
         const el = document.getElementById(name);
         if (el) el.addEventListener('click', () => setCurrentTool(name));
     });
@@ -843,6 +1227,10 @@ function initCanvas() {
     canvas.addEventListener("mousedown", (e) => {
         if (e.button === 0 && !_spaceDown && !_isPanning) inputEventQueue.push(e);
     });
+
+    // Queue double-clicks so they're processed in order with the clicks that
+    // preceded them (used to close a polygon).
+    canvas.addEventListener("dblclick", (e) => inputEventQueue.push(e));
 
     canvas.addEventListener("touchstart", (e) => {
         if (e.touches.length === 1 && !isPinching) {
@@ -981,21 +1369,14 @@ function setCanvasSize(width, height) {
 }
 
 async function animationFrame(timestamp) {
+  try {
     for (const e of inputEventQueue) {
 
         const clientXY = () => ({
             x: e.clientX ?? e.touches?.[0]?.clientX,
             y: e.clientY ?? e.touches?.[0]?.clientY
         });
-        const canvasXY = (cx, cy) => {
-            const rect = canvas.getBoundingClientRect();
-            let x = Math.floor((cx - rect.left) * canvas.width  / rect.width);
-            let y = Math.floor((cy - rect.top)  * canvas.height / rect.height);
-            if (localFlipH) x = canvas.width  - 1 - x;
-            if (localFlipV) y = canvas.height - 1 - y;
-            return { x: Math.max(0, Math.min(canvas.width-1,  x)),
-                     y: Math.max(0, Math.min(canvas.height-1, y)) };
-        };
+        const canvasXY = (cx, cy) => clientToCanvas(cx, cy);
 
         switch (e.type) {
             case "mousedown":
@@ -1021,7 +1402,40 @@ async function animationFrame(timestamp) {
                 } else if (currentTool === 'bucket') {
                     const { x, y } = canvasXY(cx, cy);
                     events.commitFill(events.newLocalId(), x, y, currentMainColor);
-                } else if (['line', 'rect', 'ellipse'].includes(currentTool)) {
+                } else if (currentTool === 'text') {
+                    startTextInput(canvasXY(cx, cy));
+                } else if (isSelectTool()) {
+                    const pt = canvasXY(cx, cy);
+                    if (selState === 'selected' && pointInSel(pt)) {
+                        // press inside an existing selection → start moving it
+                        selState = 'moving';
+                        selMoveStart = pt;
+                        selRectAtStart = { x: selRect.x, y: selRect.y };
+                    } else {
+                        // start a new marquee (discard any prior, un-moved selection)
+                        clearSelection();
+                        selState = 'selecting';
+                        selStart = pt;
+                        selRect = { x: pt.x, y: pt.y, w: 0, h: 0 };
+                        if (currentTool === 'freeform') selPath = [pt];
+                    }
+                } else if (currentTool === 'polygon') {
+                    handlePolygonClick(canvasXY(cx, cy));
+                } else if (currentTool === 'curve') {
+                    const pt = canvasXY(cx, cy);
+                    if (curvePhase === 0) {
+                        // start dragging the base line
+                        curveAnchor = { x1: pt.x, y1: pt.y, x2: pt.x, y2: pt.y };
+                        painting = true;
+                        strokeLocalId = events.newLocalId();
+                    } else {
+                        // phase 1: this click sets the bend → commit the curve
+                        events.commitCurve(strokeLocalId, curveAnchor.x1, curveAnchor.y1,
+                            curveAnchor.x2, curveAnchor.y2, pt.x, pt.y, currentBrush());
+                        curvePhase = 0; curveAnchor = null;
+                        clearPreview();
+                    }
+                } else if (SHAPE_TOOLS.includes(currentTool)) {
                     lineStartPoint = canvasXY(cx, cy);
                     painting = true;
                     strokeLocalId = events.newLocalId();
@@ -1036,8 +1450,25 @@ async function animationFrame(timestamp) {
             case "mouseup":
             case "touchend":
             {
-                if (['line', 'rect', 'ellipse'].includes(currentTool) && painting && lineStartPoint) {
-                    previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+                if (isSelectTool() && selState === 'selecting') {
+                    finalizeMarquee();
+                } else if (isSelectTool() && selState === 'moving') {
+                    finalizeMove();
+                } else if (currentTool === 'curve' && painting && curveAnchor) {
+                    // Finish the base line and enter the bend phase — don't commit yet.
+                    const ex = e.clientX ?? e.changedTouches?.[0]?.clientX;
+                    const ey = e.clientY ?? e.changedTouches?.[0]?.clientY;
+                    const end = canvasXY(ex, ey);
+                    painting = false;
+                    if (end.x === curveAnchor.x1 && end.y === curveAnchor.y1) {
+                        curveAnchor = null; curvePhase = 0; clearPreview(); // no drag → cancel
+                    } else {
+                        curveAnchor.x2 = end.x; curveAnchor.y2 = end.y;
+                        curvePhase = 1;
+                        previewCurve(end);
+                    }
+                } else if (SHAPE_TOOLS.includes(currentTool) && painting && lineStartPoint) {
+                    clearPreview();
                     const ex = e.clientX ?? e.changedTouches?.[0]?.clientX;
                     const ey = e.clientY ?? e.changedTouches?.[0]?.clientY;
                     const end = canvasXY(ex, ey);
@@ -1061,8 +1492,32 @@ async function animationFrame(timestamp) {
             case "mousemove":
             case "touchmove":
             {
-                if (['line', 'rect', 'ellipse'].includes(currentTool) && painting && lineStartPoint) {
-                    previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+                if (isSelectTool() && selState === 'selecting') {
+                    const { x: cx, y: cy } = clientXY();
+                    const p = canvasXY(cx, cy);
+                    if (currentTool === 'freeform') {
+                        selPath.push(p);
+                        clearPreview();
+                        strokeDashedPath(selPath);
+                    } else {
+                        selRect = rectFromPoints(selStart, p);
+                        clearPreview();
+                        strokeDashedRect(selRect);
+                    }
+                } else if (isSelectTool() && selState === 'moving') {
+                    const { x: cx, y: cy } = clientXY();
+                    const p = canvasXY(cx, cy);
+                    selRect.x = selRectAtStart.x + (p.x - selMoveStart.x);
+                    selRect.y = selRectAtStart.y + (p.y - selMoveStart.y);
+                    drawSelectionMovePreview();
+                } else if (currentTool === 'polygon' && polygonPoints.length > 0) {
+                    const { x: cx, y: cy } = clientXY();
+                    previewPolygon(canvasXY(cx, cy));
+                } else if (currentTool === 'curve' && curveAnchor) {
+                    const { x: cx, y: cy } = clientXY();
+                    previewCurve(canvasXY(cx, cy));
+                } else if (SHAPE_TOOLS.includes(currentTool) && painting && lineStartPoint) {
+                    clearPreview();
                     const { x: cx, y: cy } = clientXY();
                     const end = canvasXY(cx, cy);
                     const b = currentBrush();
@@ -1085,6 +1540,10 @@ async function animationFrame(timestamp) {
                                 rx, ry, 0, 0, Math.PI * 2);
                             previewCtx.stroke();
                         }
+                    } else if (currentTool === 'roundrect') {
+                        previewCtx.lineCap = 'round'; previewCtx.lineJoin = 'round';
+                        drawRoundRectPath(previewCtx, lineStartPoint.x, lineStartPoint.y, end.x, end.y);
+                        previewCtx.stroke();
                     }
                     previewCtx.restore();
                 } else {
@@ -1092,9 +1551,28 @@ async function animationFrame(timestamp) {
                 }
                 break;
             }
+            case "dblclick":
+            {
+                // Double-click finishes a polygon. The two clicks of the gesture
+                // already pushed (near-)duplicate vertices; drop the redundant one.
+                if (currentTool === 'polygon' && polygonPoints.length >= 2) {
+                    const n = polygonPoints.length;
+                    const a = polygonPoints[n - 1], b = polygonPoints[n - 2];
+                    if (Math.hypot(a.x - b.x, a.y - b.y) <= POLY_CLOSE_DIST) polygonPoints.pop();
+                    closePolygon();
+                }
+                break;
+            }
             case "keydown":
             {
-                if (!painting) {
+                if ((e.code === 'Enter' || e.code === 'NumpadEnter')
+                        && currentTool === 'polygon' && polygonPoints.length >= 2) {
+                    closePolygon();
+                } else if (e.code === 'Escape') {
+                    cancelPendingShapes();
+                    clearSelection();
+                    if (painting) { painting = false; clearPreview(); }
+                } else if (!painting) {
                     if (e.ctrlKey && e.code == "KeyZ") {
                         if (e.shiftKey) events.redo();
                         else events.undo();
@@ -1107,8 +1585,12 @@ async function animationFrame(timestamp) {
     inputEventQueue.length = 0;
 
     await events.processPendingEvents();
+  } catch (err) {
+    console.error("animationFrame error:", err);
+    inputEventQueue.length = 0;
+  }
 
-    requestAnimationFrame(animationFrame);
+  requestAnimationFrame(animationFrame);
 }
 
 function drawEvent(ctx, e) {
@@ -1135,8 +1617,91 @@ function drawEvent(ctx, e) {
             ctx.stroke();
             ctx.restore();
         }
+    } else if (e.kind === "roundrect") {
+        ctx.save();
+        ctx.strokeStyle = e.brush.color;
+        ctx.lineWidth   = e.brush.width;
+        ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+        drawRoundRectPath(ctx, e.x1, e.y1, e.x2, e.y2);
+        ctx.stroke();
+        ctx.restore();
+    } else if (e.kind === "polygon") {
+        const pts = e.points;
+        if (pts && pts.length >= 2) {
+            ctx.save();
+            ctx.strokeStyle = e.brush.color;
+            ctx.lineWidth   = e.brush.width;
+            ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+            ctx.beginPath();
+            ctx.moveTo(pts[0].x + 0.5, pts[0].y + 0.5);
+            for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x + 0.5, pts[i].y + 0.5);
+            if (e.closed) ctx.closePath();
+            ctx.stroke();
+            ctx.restore();
+        }
+    } else if (e.kind === "curve") {
+        ctx.save();
+        ctx.strokeStyle = e.brush.color;
+        ctx.lineWidth   = e.brush.width;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(e.x1 + 0.5, e.y1 + 0.5);
+        ctx.quadraticCurveTo(e.cx + 0.5, e.cy + 0.5, e.x2 + 0.5, e.y2 + 0.5);
+        ctx.stroke();
+        ctx.restore();
+    } else if (e.kind === "text") {
+        ctx.save();
+        ctx.fillStyle = e.color;
+        ctx.font = `${e.size}px ${e.font || 'Tahoma, Arial, sans-serif'}`;
+        ctx.textBaseline = 'top';
+        const lines = (e.text || '').split('\n');
+        const lh = e.size * 1.2;
+        for (let i = 0; i < lines.length; i++) ctx.fillText(lines[i], e.x, e.y + i * lh);
+        ctx.restore();
+    } else if (e.kind === "selectMove") {
+        // 1) erase the source region with the background colour (lasso-clipped if free-form)
+        ctx.save();
+        ctx.fillStyle = e.bg || '#ffffff';
+        if (e.path && e.path.length >= 3) {
+            ctx.beginPath();
+            ctx.moveTo(e.path[0].x, e.path[0].y);
+            for (let i = 1; i < e.path.length; i++) ctx.lineTo(e.path[i].x, e.path[i].y);
+            ctx.closePath();
+            ctx.fill();
+        } else {
+            ctx.fillRect(e.sx, e.sy, e.sw, e.sh);
+        }
+        ctx.restore();
+        if (isDrawable(e._bitmap)) ctx.drawImage(e._bitmap, e.dx, e.dy);
     } else {
         console.error("unknown event kind", e.kind);
+    }
+}
+
+// True only for values CanvasRenderingContext2D.drawImage accepts.
+function isDrawable(x) {
+    return x instanceof HTMLCanvasElement
+        || (typeof ImageBitmap !== 'undefined' && x instanceof ImageBitmap)
+        || (typeof HTMLImageElement !== 'undefined' && x instanceof HTMLImageElement);
+}
+
+// Build a rounded-rectangle path from two opposite corners. Radius adapts to the
+// smaller side so thin/small rectangles still look right.
+function drawRoundRectPath(ctx, x1, y1, x2, y2) {
+    const x = Math.min(x1, x2), y = Math.min(y1, y2);
+    const w = Math.abs(x2 - x1), h = Math.abs(y2 - y1);
+    const r = Math.max(0, Math.min(16, w / 2, h / 2));
+    ctx.beginPath();
+    if (ctx.roundRect) {
+        ctx.roundRect(x + 0.5, y + 0.5, w, h, r);
+    } else {
+        // fallback for older engines
+        ctx.moveTo(x + r + 0.5, y + 0.5);
+        ctx.arcTo(x + w + 0.5, y + 0.5,       x + w + 0.5, y + h + 0.5, r);
+        ctx.arcTo(x + w + 0.5, y + h + 0.5,   x + 0.5,     y + h + 0.5, r);
+        ctx.arcTo(x + 0.5,     y + h + 0.5,   x + 0.5,     y + 0.5,     r);
+        ctx.arcTo(x + 0.5,     y + 0.5,       x + w + 0.5, y + 0.5,     r);
+        ctx.closePath();
     }
 }
 

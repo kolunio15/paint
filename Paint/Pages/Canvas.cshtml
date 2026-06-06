@@ -20,18 +20,30 @@
 
     <div class="main-content">
         <div class="toolbox">
-            <div class="tool" id="eraser"     title="Eraser">         <img src="/icons/eraser.ico"       ></div>
-            <div class="tool" id="bucket"     title="Fill Bucket">    <img src="/icons/bucket.ico"       ></div>
-            <div class="tool" id="eyedropper" title="Color Picker">   <img src="/icons/color_picker.ico" ></div>
-            <div class="tool" id="magnifier"  title="Move / Pan">     <img src="/icons/zoom.ico"         ></div>
-            <div class="tool" id="pen"        title="Pencil">         <img src="/icons/pen.ico"          ></div>
-            <div class="tool active" id="brush" title="Brush">        <img src="/icons/brush.ico"        ></div>
-            <div class="tool" id="airbrush"   title="Airbrush">       <img src="/icons/spray.ico"        ></div>
-            <div class="tool" id="line"       title="Line">           <img src="/icons/line.ico"         ></div>
-            <div class="tool" id="rect"       title="Rectangle">      <img src="/icons/rect2.ico"        ></div>
-            <div class="tool" id="ellipse"    title="Ellipse">        <img src="/icons/elipse.ico"       ></div>
+            <div class="tools">
+                <div class="tool" id="freeform"   title="Free-Form Select"></div>
+                <div class="tool" id="select"     title="Select"></div>
+                <div class="tool" id="eraser"     title="Eraser"></div>
+                <div class="tool" id="bucket"     title="Fill with Color"></div>
+                <div class="tool" id="eyedropper" title="Pick Color"></div>
+                <div class="tool" id="magnifier"  title="Magnifier"></div>
+                <div class="tool" id="pen"        title="Pencil"></div>
+                <div class="tool active" id="brush" title="Brush"></div>
+                <div class="tool" id="airbrush"   title="Airbrush"></div>
+                <div class="tool" id="text"       title="Text"></div>
+                <div class="tool" id="line"       title="Line"></div>
+                <div class="tool" id="curve"      title="Curve"></div>
+                <div class="tool" id="rect"       title="Rectangle"></div>
+                <div class="tool" id="polygon"    title="Polygon"></div>
+                <div class="tool" id="ellipse"    title="Ellipse"></div>
+                <div class="tool" id="roundrect"  title="Rounded Rectangle"></div>
+            </div>
             <div class="tool-options">
-                <input type="range" id="size" min="1" max="20" value="2" />
+                <input type="range" id="size" min="1" max="500" value="4" style="display:none">
+                <input type="number" id="sizeNum" min="1" max="500" value="4"
+                       class="size-num" oninput="syncSizeFromNum(this.value)">
+                <input type="range"  id="sizeSlider" min="1" max="100" value="4"
+                       class="size-slider" oninput="syncSizeFromSlider(this.value)">
             </div>
         </div>
 
@@ -147,30 +159,29 @@
 .win-dropdown {
     position: fixed;
     z-index: 500;
-    background: #c0c0c0;
-    border-top: 1px solid #fff;
-    border-left: 1px solid #fff;
-    border-bottom: 1px solid #404040;
-    border-right: 1px solid #404040;
-    box-shadow: 1px 1px 0 #000;
+    background: #ece9d8;
+    border: 1px solid #9a9b9c;
+    box-shadow: 2px 2px 4px rgba(0,0,0,0.25);
     min-width: 180px;
     padding: 2px 0;
+    font-family: Tahoma, Arial, sans-serif;
+    font-size: 11px;
 }
 .dd-item {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 3px 24px 3px 8px;
-    font-size: 13px;
+    padding: 3px 24px 3px 24px;
+    font-size: 11px;
     cursor: default;
     white-space: nowrap;
     user-select: none;
 }
-.dd-item:hover { background: #000080; color: #fff; }
+.dd-item:hover { background: #316ac5; color: #fff; }
 .dd-item:hover img { filter: invert(1); }
 .dd-item.disabled { color: #808080; pointer-events: none; }
 .dd-sep {
-    border-top: 1px solid #808080;
+    border-top: 1px solid #aca899;
     border-bottom: 1px solid #fff;
     margin: 2px 4px;
 }
@@ -212,18 +223,29 @@
     margin-top: 12px;
 }
 kbd {
-    background: #c0c0c0;
-    border-top: 1px solid #fff;
-    border-left: 1px solid #fff;
-    border-bottom: 1px solid #404040;
-    border-right: 1px solid #404040;
-    padding: 1px 4px;
+    background: #ece9d8;
+    border: 1px solid;
+    border-color: #fff #808080 #808080 #fff;
+    padding: 1px 5px;
     font-family: inherit;
+    font-size: 11px;
+    box-shadow: 1px 1px 0 #000;
 }
 </style>
 
 <script>
 const isLoggedIn = @(User.Identity?.IsAuthenticated == true ? "true" : "false");
+
+function syncSizeFromSlider(v) {
+    v = Math.max(1, Math.min(500, Number(v)));
+    document.getElementById('size').value = v;
+    document.getElementById('sizeNum').value = v;
+}
+function syncSizeFromNum(v) {
+    v = Math.max(1, Math.min(500, Number(v) || 1));
+    document.getElementById('size').value = v;
+    document.getElementById('sizeSlider').value = Math.min(v, 100);
+}
 
 /* ========== MENU SYSTEM ========== */
 const MENUS = {
