@@ -78,9 +78,9 @@
             @if (User.Identity?.IsAuthenticated == true && !User.IsInRole("Admin") && !User.IsInRole("Moderator"))
             {
                 <button class="mod-flag-btn" title="Report this room" style="color:#808080;"
-                        onclick="event.stopPropagation(); openRoomReportModal()">âš‘</button>
+                        onclick="event.stopPropagation(); openRoomReportModal()">⚑</button>
             }
-            <span>â–˛</span>
+            <span>▲</span>
         </span>
     </div>
     <div class="chat-body" id="chatBody">
@@ -98,7 +98,7 @@
     <div class="win-window" style="width:400px;box-shadow:4px 4px 0 #000">
         <div class="gallery-titlebar">
             <div class="titlebar-title" style="--titlebar-icon:url('/icons/paint_file.ico')">Publish to Gallery</div>
-            <div class="gallery-titlebar-buttons"><div class="titlebar-btn" onclick="hideOverlay('publishOverlay')">âś•</div></div>
+            <div class="gallery-titlebar-buttons"><div class="titlebar-btn" onclick="hideOverlay('publishOverlay')">✕</div></div>
         </div>
         <div style="padding:16px;background:#c0c0c0">
             <div id="publishError"   class="msg-error"   style="display:none"></div>
@@ -120,7 +120,7 @@
     <div class="win-window" style="width:360px;box-shadow:4px 4px 0 #000">
         <div class="gallery-titlebar">
             <div class="titlebar-title" style="--titlebar-icon:url('/icons/accessibility.ico')">Keyboard Shortcuts</div>
-            <div class="gallery-titlebar-buttons"><div class="titlebar-btn" onclick="hideOverlay('shortcutsOverlay')">âś•</div></div>
+            <div class="gallery-titlebar-buttons"><div class="titlebar-btn" onclick="hideOverlay('shortcutsOverlay')">✕</div></div>
         </div>
         <div style="padding:16px;background:#c0c0c0">
             <table style="width:100%;border-collapse:collapse;font-size:12px">
@@ -141,7 +141,7 @@
     <div class="win-window" style="width:340px;box-shadow:4px 4px 0 #000">
         <div class="gallery-titlebar">
             <div class="titlebar-title" id="confirmTitle" style="--titlebar-icon:url('/icons/paint_file.ico')">Confirm</div>
-            <div class="gallery-titlebar-buttons"><div class="titlebar-btn" onclick="hideOverlay('confirmOverlay')">âś•</div></div>
+            <div class="gallery-titlebar-buttons"><div class="titlebar-btn" onclick="hideOverlay('confirmOverlay')">✕</div></div>
         </div>
         <div style="padding:16px;background:#c0c0c0">
             <div id="confirmMessage" style="font-size:13px;margin-bottom:14px;line-height:1.4"></div>
@@ -268,8 +268,8 @@ const MENUS = {
     view: {
         anchor: 'menuView',
         items: [
-            { label: 'Zoom In',          shortcut: 'Ctrl+â†‘scroll', action: menuZoomIn },
-            { label: 'Zoom Out',         shortcut: 'Ctrl+â†“scroll', action: menuZoomOut },
+            { label: 'Zoom In',          shortcut: 'Ctrl+↑scroll', action: menuZoomIn },
+            { label: 'Zoom Out',         shortcut: 'Ctrl+↓scroll', action: menuZoomOut },
             { label: 'Reset Zoom (100%)',                           action: menuZoomReset },
         ]
     },
@@ -331,7 +331,7 @@ function openMenu(name) {
             if (locked) {
                 const lock = document.createElement('span');
                 lock.className = 'shortcut';
-                lock.textContent = 'đź”’';
+                lock.textContent = '🔒';
                 el.appendChild(lock);
             } else if (item.shortcut) {
                 const s = document.createElement('span');
@@ -588,7 +588,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closeRoomRep
         <div class="gallery-titlebar">
             <div class="titlebar-title" style="--titlebar-icon:url('/icons/msg_warning.ico')">Report Room</div>
             <div class="gallery-titlebar-buttons">
-                <div class="titlebar-btn" onclick="closeRoomReportModal()">âś•</div>
+                <div class="titlebar-btn" onclick="closeRoomReportModal()">✕</div>
             </div>
         </div>
         <div style="padding:12px 16px; background:#c0c0c0;">
